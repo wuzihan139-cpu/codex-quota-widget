@@ -30,11 +30,17 @@ itself uses. Not affiliated with OpenAI.
   itself; it pops back and re-docks the moment Codex reappears. It also
   steps aside while you drag the Codex window or when another window
   covers it, and returns as soon as you let go / uncover it.
-- **Pinned follow** — drag the full-layout widget onto Codex wherever you
-  like, then right-click → "固定跟随" (pinned follow): it keeps that spot
-  relative to the Codex window (fractional anchor — stays put across
-  maximize and restore) with the full layout, and shares follow mode's
-  hide/reappear behaviors. Dragging it again re-pins to the new spot.
+- **Pinned follow** — right-click → "固定跟随" (pinned follow; exclusive
+  with title-bar follow). The widget keeps the full layout and shares
+  follow mode's hide, drag-aside, and uncover behavior; occlusion is
+  judged on the widget's own area. Turning it on places the widget at
+  the default spot: lower-left of the Codex window, a short gap above
+  the avatar. Two slots are remembered separately. While Codex is a
+  normal window the widget follows its moves and small resizes, and
+  dragging re-pins that slot. The first time Codex is maximized the
+  widget returns to the default spot, and later drags while maximized
+  are kept on their own. Restoring the window returns to the
+  normal-window slot. Double-click collapse stays anchored on the title.
 - **Used / remaining display** — right-click → "显示剩余额度" (show remaining)
   flips numbers and bars to the remaining quota; warning colors always track
   usage, so "8% remaining" still reads red.

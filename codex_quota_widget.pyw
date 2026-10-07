@@ -36,6 +36,8 @@ USAGE_URL = "https://chatgpt.com/backend-api/codex/usage"
 POLL_SECONDS = 60
 FOLLOW_INTERVAL_MS = 1000
 DRAG_INTERVAL_MS = 120
+_PIN_DEFAULT_GAP = 105    # 固定跟随默认位：浮窗底边距窗口可见底边的像素（头像上方不远处）
+_PIN_DEFAULT_LEFT = 8     # 固定跟随默认位：浮窗左边距窗口可见左边的像素
 PROXY = os.environ.get("CODEX_WIDGET_PROXY", "http://127.0.0.1:7897")
 DEBUG = "--debug" in sys.argv
 if getattr(sys, "frozen", False):
@@ -221,10 +223,14 @@ _TERMINAL_EXES = {"windowsterminal", "openconsole", "conhost", "cmd",
                   "powershell", "pwsh", "wezterm-gui", "alacritty",
                   "mintty", "hyper"}
 
-# 宿主追溯时要跳过的系统/外壳进程（避免跟到桌面或托盘上）
+# 宿主追溯时要跳过的系统/外壳进程（避免跟到桌面或托盘上）；
+# 编辑器/IDE 也不算 Codex 宿主——其集成终端里跑的 codex 会话不应把
+# 浮窗拽到编辑器窗口上（实测：VSCode 集成终端的 codex.exe 挂在
+# code.exe 进程树下，ChatGPT App 最小化时浮窗曾因此跟走 VSCode）
 _HOST_SKIP_EXES = {"explorer", "system", "idle", "svchost", "services",
                    "csrss", "winlogon", "wininit", "smss", "lsass",
-                   "pythonw", "python", "dllhost", "runtimebroker"}
+                   "pythonw", "python", "dllhost", "runtimebroker",
+                   "code", "code-insiders", "devenv"}
 
 # 拖动这些进程的窗口时隐藏浮窗（Codex 自身/其宿主/可能承载 CLI 的终端）
 _DRAG_HIDE_EXES = _TERMINAL_EXES | {"codex", "chatgpt"}
@@ -574,8 +580,11 @@ class App:
                      "bar_w": 95, "bar_h": 8, "cbar_w": 20, "cbar_h": 7}
         self.scale = 1.0
         self.follow_var = tk.BooleanVar(value=False)
-        self.pin_var = tk.BooleanVar(value=False)  # 固定跟随：钉住窗口内相对比例
-        self.pin_frac = (0.0, 0.0)
+        self.pin_var = tk.BooleanVar(value=False)  # 固定跟随：最大化回默认位，常规可拖调
+        self._pin_custom = None    # 常规（非最大化）状态的钉住位 (x, 底边y)
+        self._pin_max = None       # 最大化状态的钉住位（首次进默认位，之后记住调整）
+        self._pin_abs = (0, 0)     # 当前绝对位置
+        self._pin_was_zoomed = False
         self._last_rect = None
         self.remain_var = tk.BooleanVar(value=False)  # True=显示剩余额度
         self._c_err_shown = False
@@ -831,8 +840,19 @@ class App:
                                      int(6 * self.scale)))
         self.root.update_idletasks()
         nw = self.root.winfo_reqwidth()
-        self.root.geometry("+%d+%d" % (round(cx - nw / 2),
-                                       self.root.winfo_y()))
+        nx = round(cx - nw / 2)
+        ny = self.root.winfo_y()
+        self.root.geometry("+%d+%d" % (nx, ny))
+        if self.pin_var.get():
+            # 固定跟随：以"Codex·Plus"标题为锚原地收回/展开，并更新钉住记录
+            self._pin_abs = (nx, ny)
+            bottom = ny + max(1, self.root.winfo_reqheight())
+            zoomed = self._last_rect is not None and bool(
+                ctypes.windll.user32.IsZoomed(self._last_rect[6]))
+            if zoomed:
+                self._pin_max = (nx, bottom)
+            else:
+                self._pin_custom = (nx, bottom)
 
     # ---- 跟随模式 ----
 
@@ -853,11 +873,10 @@ class App:
             if self.follow_var.get():
                 self.follow_var.set(False)
                 self._on_follow_toggle()  # 还原常规布局并处理隐藏态
-            rect = find_codex_rect()
-            # 钉住当前在 Codex 窗口内的相对比例；找不到 Codex 就退化为贴其左上角
-            self.pin_frac = (((self.root.winfo_x() - rect[0]) / max(1, rect[2] - rect[0]),
-                              (self.root.winfo_y() - rect[1]) / max(1, rect[3] - rect[1]))
-                             if rect else (0.0, 0.0))
+            self._pin_custom = None   # 启用即回默认位（左下角头像上方）
+            self._pin_max = None      # 最大化槽位同样回默认位
+            self._last_rect = None    # 首个同步不计算位移增量
+            self._pin_was_zoomed = False
             self._dragging = False
             self._follow_miss = 0
             self._follow_tick()
@@ -908,7 +927,6 @@ class App:
                 self.root.withdraw()  # Codex 无可见窗口：浮窗随之隐藏
             return
         self._follow_miss = 0
-        self._last_rect = rect
         self._sync_follow(rect)
 
     def _dock_rect(self, rect):
@@ -933,6 +951,49 @@ class App:
             area = self._dock_rect(rect)
         return occluder_over(area, rect[6], self._self_hwnd)
 
+    def _pin_pos(self, rect):
+        """固定跟随定位（两套位置各自记忆）：最大化用最大化槽位（首次进
+        默认位=左下角头像上方，之后记住拖动调整）；常规用窗口化槽位
+        （跟随窗口移动/缩放，可拖动调节）。底边固定——折叠不瞬移。"""
+        user32 = ctypes.windll.user32
+        h = max(1, self.root.winfo_height())
+        zoomed = bool(user32.IsZoomed(rect[6]))
+        if zoomed:
+            if self._pin_max is None:
+                x, y_top = self._default_pin_pos(rect)
+                self._pin_max = (x, y_top + h)  # 默认位返回顶边，槽位存底边
+            x, bottom = self._pin_max
+            pos = self._clamp_pin(rect, x, bottom - h)
+            self._pin_max = (pos[0], pos[1] + h)
+            self._pin_abs = pos
+            return pos
+        was_zoomed = self._pin_was_zoomed
+        self._pin_was_zoomed = False
+        if self._pin_custom is None:
+            x, y_top = self._default_pin_pos(rect)
+            self._pin_custom = (x, y_top + max(1, self.root.winfo_height()))
+        elif self._last_rect is not None and not was_zoomed:
+            pl, pt, pr, pb = self._last_rect[:4]
+            l, t, r, b = rect[:4]
+            size_jump = (abs((r - l) - (pr - pl)) > 150
+                         or abs((b - t) - (pb - pt)) > 150)
+            if not size_jump:
+                # 常规状态：窗口移动/小幅缩放时跟随位移（最大化/还原切换拍跳过）
+                self._pin_custom = (self._pin_custom[0] + rect[0] - pl,
+                                    self._pin_custom[1] + rect[1] - pt)
+        x, bottom = self._pin_custom
+        pos = self._clamp_pin(rect, x, bottom - h)
+        self._pin_custom = (pos[0], pos[1] + h)
+        self._pin_abs = pos
+        return pos
+
+    def _default_pin_pos(self, rect):
+        """固定跟随默认位：左下角、头像上方（底边距可见底边 GAP，再上移 8px）。"""
+        l, t, r, b = rect[:4]
+        h = max(1, self.root.winfo_height())
+        return self._clamp_pin(rect, l + _PIN_DEFAULT_LEFT,
+                               b - 8 - _PIN_DEFAULT_GAP - h)
+
     def _clamp_pin(self, rect, x, y):
         """固定跟随位置钳回 Codex 所在显示器的工作区，防止最大化等场景溢出屏幕。"""
         user32 = ctypes.windll.user32
@@ -953,13 +1014,9 @@ class App:
                 self._follow_hidden = True
                 self.root.withdraw()  # Codex 被盖住：浮窗跟着退场
             return
-        pos = None
-        if self.pin_var.get():
-            fx, fy = self.pin_frac
-            x = rect[0] + int(round(fx * (rect[2] - rect[0])))
-            y = rect[1] + int(round(fy * (rect[3] - rect[1])))
-            pos = self._clamp_pin(rect, x, y)
+        pos = self._pin_pos(rect) if self.pin_var.get() else None
         self._place_follow(rect, pos)
+        self._last_rect = rect   # 同步后更新：下一拍据此算窗口位移增量
 
     def _place_follow(self, rect, pos=None):
         """定位并显形；隐藏状态下走这里恢复。pos 给定则钉在该处（固定跟随）。"""
@@ -1029,11 +1086,16 @@ class App:
             return
         nx, ny = e.x_root - self._dx, e.y_root - self._dy
         self.root.geometry("+%d+%d" % (nx, ny))
-        if self.pin_var.get() and self._last_rect:
-            # 固定跟随时手动挪动 = 在新位置重新钉住（存窗口内相对比例）
-            l, t, r, b = self._last_rect[:4]
-            self.pin_frac = ((nx - l) / max(1, r - l),
-                             (ny - t) / max(1, b - t))
+        if self.pin_var.get():
+            # 固定跟随时手动挪动 = 重新钉住当前状态（最大化/窗口化各自记忆）
+            self._pin_abs = (nx, ny)
+            bottom = ny + max(1, self.root.winfo_height())
+            zoomed = self._last_rect is not None and bool(
+                ctypes.windll.user32.IsZoomed(self._last_rect[6]))
+            if zoomed:
+                self._pin_max = (nx, bottom)
+            else:
+                self._pin_custom = (nx, bottom)
 
     def _double(self, e):
         if getattr(e.widget, "_is_resize", False):
