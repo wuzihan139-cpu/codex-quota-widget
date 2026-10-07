@@ -3,10 +3,13 @@
 
 a = Analysis(
     ['..\\codex_quota_widget.pyw'],
-    pathex=[],
+    pathex=['..'],
     binaries=[],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=['codex_widget', 'codex_widget.app', 'codex_widget.config',
+                   'codex_widget.usage', 'codex_widget.codex_win',
+                   'codex_widget.follow', 'codex_widget.tray',
+                   'codex_widget.dpi'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

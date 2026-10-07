@@ -61,7 +61,8 @@ itself uses. Not affiliated with OpenAI.
 
 ## Setup
 
-1. Download `codex_quota_widget.pyw` and `start_widget.bat` into any folder.
+1. Download `codex_quota_widget.pyw`, `start_widget.bat`, and the
+   `codex_widget/` package beside them into any folder.
 2. Double-click `start_widget.bat` (or the `.pyw` directly). The widget
    appears near the bottom-right corner.
 3. Optional — autostart: Win+R → `shell:startup` → put a shortcut to
@@ -96,7 +97,7 @@ the failed attempt is instant (connection refused), so the fallback is cheap.
 | What | How |
 | --- | --- |
 | Proxy | `CODEX_WIDGET_PROXY` env var (default `http://127.0.0.1:7897`, `direct` = direct only) |
-| Refresh interval | edit `POLL_SECONDS` at the top of the script |
+| Refresh interval | edit `POLL_SECONDS` in `codex_widget/config.py` |
 | Debug log | run with `--debug` → writes `widget.log` next to the script |
 
 ## Build (optional)

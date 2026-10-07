@@ -6,8 +6,20 @@
 
 ## 项目是什么
 
-Windows 桌面置顶小浮窗（tkinter，纯标准库，单文件
-`codex_quota_widget.pyw`），实时显示 OpenAI Codex（ChatGPT 计划）的
+Windows 桌面置顶小浮窗（tkinter，纯标准库）。入口仍是
+`codex_quota_widget.pyw`（`start_widget.bat` 与 PyInstaller 都指向它），
+实现按职责拆在同级包 `codex_widget/`：
+
+- `config.py`：路径、轮询/代理/颜色常量、调试日志。`BASE_DIR` 是入口
+  脚本或冻结 exe 的目录，不是包目录。
+- `usage.py`：auth.json、curl 拉额度、窗口解析、倒计时文案。
+- `codex_win.py`：进程快照、Codex 窗口发现、拖动探测、遮挡 z 序、工作区钳制。
+- `follow.py`：顶栏跟随与固定跟随的两套槽位。
+- `tray.py`：托盘线程。
+- `dpi.py`：DPI 感知。
+- `app.py`：浮窗界面、轮询泵、拖动/缩放/折叠。
+
+浮窗实时显示 OpenAI Codex（ChatGPT 计划）的
 5 小时/每周额度：百分比、进度条（警告色阈值绿<70%/橙<90%/红≥90%，
 恒按已用比例算）、重置倒计时；右键可切换已用/剩余额度两种显示模式
 （剩余模式数字与填充量 = 100−已用，警告色不变）。背景黑灰半透明
@@ -21,12 +33,11 @@ Windows 桌面置顶小浮窗（tkinter，纯标准库，单文件
 
 - GitHub：https://github.com/wuzihan139-cpu/codex-quota-widget（**private**，
   MIT，英文 README.md + 中文 README.zh-CN.md）。
-- 分支 main 跟踪 origin/main。`7c4859b` 及之前共 5 个提交：
-  `65459d6` 初始发布；`72e7cc9` 标题居中；`4464d4b` 跟随模式+显示模式；
-  `9a0206b` 跟随避让（拖动/遮挡）；`7c4859b` 固定跟随+托盘+打包。
-- 其后提交（用户已验收功能实现）：固定跟随改为两套记忆槽位，默认位
-  `GAP=105`，折叠以标题为锚，`_last_rect` 在 `_sync_follow` 之后更新。
-  语义见下方功能节。
+- 分支 main 跟踪 origin/main。`beb4c08` 为固定跟随两套记忆槽位。
+  其前为 `7c4859b` 托盘+打包，再前 `9a0206b` 跟随避让、`4464d4b` 跟随+显示、
+  `72e7cc9` 标题居中、`65459d6` 初始发布。
+- 其后提交（用户要求上传）：单文件拆成 `codex_widget/` 七个模块，入口
+  脚本保留。行为不变，只改代码组织。
 - 用户审核通过之前不 commit/push（工作约定）；每轮改动遵循"先提交推送
   备份，再动工，不满意回退"的节奏。
 - 冻结 exe 坑（托盘排障实录）：收句柄的 WinAPI 必须 64 位 argtypes

@@ -46,7 +46,8 @@ Windows 桌面置顶小浮窗，实时显示 [OpenAI Codex](https://openai.com/i
 
 ## 使用
 
-1. 下载 `codex_quota_widget.pyw` 和 `start_widget.bat` 到任意文件夹。
+1. 下载 `codex_quota_widget.pyw`、`start_widget.bat`，以及同级的
+   `codex_widget/` 包到任意文件夹。
 2. 双击 `start_widget.bat`（或直接双击 `.pyw`），浮窗出现在屏幕右下角。
 3. 可选——开机自启：Win+R → `shell:startup` → 把 `start_widget.bat`
    的快捷方式放进去。
@@ -77,7 +78,7 @@ Windows 桌面置顶小浮窗，实时显示 [OpenAI Codex](https://openai.com/i
 | 项目 | 方法 |
 | --- | --- |
 | 代理 | 环境变量 `CODEX_WIDGET_PROXY`（默认 `http://127.0.0.1:7897`，`direct` = 仅直连） |
-| 刷新间隔 | 改脚本顶部 `POLL_SECONDS` |
+| 刷新间隔 | 改 `codex_widget/config.py` 里的 `POLL_SECONDS` |
 | 调试日志 | 带 `--debug` 运行 → 在脚本旁写 `widget.log` |
 
 ## 打包（可选）
