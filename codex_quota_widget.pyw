@@ -213,7 +213,7 @@ class App:
                                       size=self.base["small"])
         self.f_title = tk.Label(root, text="Codex 获取中…",
                                 font=self.font_title, bg=BG, fg=FG,
-                                cursor="fleur", anchor="w")
+                                cursor="fleur", anchor="center")
         self.f_title.pack(fill="x", padx=10, pady=(6, 3))
         self.rows = {}
         for key, name in (("primary", "5h"), ("secondary", "周")):
@@ -362,16 +362,25 @@ class App:
     # ---- 交互 ----
 
     def toggle_collapse(self):
+        # 收回/展开保持水平中心不动：标题文字保持原位，宽度变化向两侧对称
+        cx = self.root.winfo_x() + self.root.winfo_width() / 2
         self.collapsed = not self.collapsed
+        pad = max(6, int(round(10 * self.scale)))
         for bar, val, reset in self.rows.values():
             if self.collapsed:
                 bar.master.pack_forget()
             else:
-                bar.master.pack(fill="x", padx=10, pady=1)
+                bar.master.pack(fill="x", padx=pad, pady=1)
         if self.collapsed:
             self.f_status.pack_forget()
         else:
-            self.f_status.pack(fill="x", padx=10, pady=(3, 6))
+            self.f_status.pack(fill="x", padx=pad,
+                               pady=(int(3 * self.scale),
+                                     int(6 * self.scale)))
+        self.root.update_idletasks()
+        nw = self.root.winfo_reqwidth()
+        self.root.geometry("+%d+%d" % (round(cx - nw / 2),
+                                       self.root.winfo_y()))
 
     def _press(self, e):
         if getattr(e.widget, "_is_resize", False):
