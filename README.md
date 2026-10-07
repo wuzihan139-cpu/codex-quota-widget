@@ -22,7 +22,8 @@ itself uses. Not affiliated with OpenAI.
 - **Drag to move** anywhere; **drag edges/corner to resize** (font, bars and
   padding scale together, 0.75×–3×); **double-click** to collapse to one line;
   **right-click** menu (refresh now / follow / pinned follow / remaining /
-  collapse / quit).
+  collapse / usage guide / quit). "使用说明" opens the guide, with the
+  project repository link at the top.
 - **Follow mode** — right-click → "跟随 Codex 窗口" (follow Codex window):
   the widget docks into the Codex window's title bar — DPI-aware, also fits
   maximized/snapped windows — and switches to a compact one-line layout.

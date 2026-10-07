@@ -10,6 +10,7 @@ import time
 
 AUTH_PATH = os.path.expanduser("~/.codex/auth.json")
 USAGE_URL = "https://chatgpt.com/backend-api/codex/usage"
+REPO_URL = "https://github.com/wuzihan139-cpu/codex-quota-widget"
 POLL_SECONDS = 60
 FOLLOW_INTERVAL_MS = 1000
 DRAG_INTERVAL_MS = 120
