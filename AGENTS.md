@@ -20,17 +20,17 @@ Windows 桌面置顶小浮窗（tkinter，纯标准库，单文件
 
 - GitHub：https://github.com/wuzihan139-cpu/codex-quota-widget（**private**，
   MIT，英文 README.md + 中文 README.zh-CN.md）。
-- 分支 main 跟踪 origin/main，本地与远程同步在 `72e7cc9`，共 2 个提交：
-  `65459d6` 初始发布；`72e7cc9` 标题居中 + 折叠/展开中心保持。
-- **工作区未提交改动（均已自验，等用户审核后才 commit/push——用户明确
-  要求）**：
-  - `M codex_quota_widget.pyw`：跟随模式 + 紧凑单行布局 + 两个 bug 修复
-    （宿主窗口检测命中 chatgpt.exe、`pack_configure` 复活守卫）；
-  - `?? AGENTS.md`：本文件（届时建议一并提交，让项目记忆随仓库走）；
-  - `?? _follow_demo.png`：跟随模式演示截图（临时产物，审核后删除或
-    加入 .gitignore）。
-- 审核通过后的提交应包含：上述代码改动 + README 更新（跟随模式、紧凑
-  布局、跟随检测规则的说明）。
+- 分支 main 跟踪 origin/main，与远程同步在 `4464d4b`，共 3 个提交：
+  `65459d6` 初始发布；`72e7cc9` 标题居中 + 折叠/展开中心保持；
+  `4464d4b` 跟随模式 + 显示模式 + 配色等（含 AGENTS.md 与双语 README，
+  用户逐项验收后经其同意推送备份）。
+- **工作区未提交改动（已自验，等用户验收，不满意会要求回退）**：
+  - `M codex_quota_widget.pyw`：①拖动 Codex 时浮窗隐藏、松手立即贴到
+    新位置顶栏（`drag_target_exe()` 120ms 探针读前台线程 GUITHREADINFO
+    的 GUI_INMOVESIZE + hwndMoveSize 归属，命中 _DRAG_HIDE_EXES 才隐藏，
+    拖动期间暂停 1s 跟随节拍）；②Codex 被其他窗口遮挡时浮窗同样暂时
+    消失、遮挡移除恢复（`occluder_over()` 锚定 z 序向上遍历）。
+- 用户审核通过之前不 commit/push（工作约定）。
 
 ## 功能：跟随模式（2026-10-07 实现，待用户终审）
 
@@ -39,7 +39,15 @@ Windows 桌面置顶小浮窗（tkinter，纯标准库，单文件
 自绘标题栏，客户区=整窗即 nc_top=0，效果为覆盖其头部条且与窗口顶
 齐平；y 不越出所在屏幕工作区顶边）。连续约 2 秒（2 拍，防进程快照
 偶发失败闪隐）找不到 Codex 窗口则自动隐藏，重新出现立即定位并显形
-跟随；关闭跟随时若已隐藏则强制显形。最小化视同消失。
+跟随；关闭跟随时若已隐藏则强制显形。最小化视同消失。拖动 Codex 窗口
+期间浮窗也立即隐藏（120ms 探针 `drag_target_exe()`：前台线程
+GUITHREADINFO 的 GUI_INMOVESIZE 标志 + hwndMoveSize 解析归属，仅
+codex/chatgpt/终端命中才隐藏，拖浮窗自身不触发），松手后立刻定位到
+新位置顶端显形；拖动期间 1s 跟随节拍暂停，避免跟随拖影。Codex 顶栏
+停靠区被其他可见窗口盖住时同样暂时消失（`occluder_over()` 以 Codex
+hwnd 为锚沿 z 序 `GetWindow(GW_HWNDPREV)` 向上走，跳过自身/最小化/
+DWM cloaked 幽灵窗口；不依赖 EnumWindows 全局顺序），遮挡移除后
+下一拍恢复；拖动松手时若仍被遮挡则保持隐藏。
 同时切换为紧凑单行（约 380×39）：`5h ▮67% 1时37分 │ 周 ▮10% 6天19时`，
 无标题无状态行，百分比变色；出错时单行内容临时换成橙色错误提示。
 跟随检测优先级（`find_codex_rect()`）：

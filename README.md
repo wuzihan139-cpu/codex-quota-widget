@@ -26,7 +26,9 @@ itself uses. Not affiliated with OpenAI.
   the widget docks into the Codex window's title bar — DPI-aware, also fits
   maximized/snapped windows — and switches to a compact one-line layout.
   When no Codex window is visible (closed or minimized) the widget hides
-  itself; it pops back and re-docks the moment Codex reappears.
+  itself; it pops back and re-docks the moment Codex reappears. It also
+  steps aside while you drag the Codex window or when another window
+  covers it, and returns as soon as you let go / uncover it.
 - **Used / remaining display** — right-click → "显示剩余额度" (show remaining)
   flips numbers and bars to the remaining quota; warning colors always track
   usage, so "8% remaining" still reads red.

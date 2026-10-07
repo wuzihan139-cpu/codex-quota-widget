@@ -34,6 +34,7 @@ AUTH_PATH = os.path.expanduser("~/.codex/auth.json")
 USAGE_URL = "https://chatgpt.com/backend-api/codex/usage"
 POLL_SECONDS = 60
 FOLLOW_INTERVAL_MS = 1000
+DRAG_INTERVAL_MS = 120
 PROXY = os.environ.get("CODEX_WIDGET_PROXY", "http://127.0.0.1:7897")
 DEBUG = "--debug" in sys.argv
 LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "widget.log")
@@ -220,6 +221,9 @@ _HOST_SKIP_EXES = {"explorer", "system", "idle", "svchost", "services",
                    "csrss", "winlogon", "wininit", "smss", "lsass",
                    "pythonw", "python", "dllhost", "runtimebroker"}
 
+# 拖动这些进程的窗口时隐藏浮窗（Codex 自身/其宿主/可能承载 CLI 的终端）
+_DRAG_HIDE_EXES = _TERMINAL_EXES | {"codex", "chatgpt"}
+
 
 class _MONITORINFO(ctypes.Structure):
     _fields_ = [("cbSize", ctypes.c_ulong),
@@ -229,7 +233,7 @@ class _MONITORINFO(ctypes.Structure):
 
 
 def find_codex_rect():
-    """返回可跟随的 Codex 窗口 (l, t, r, b, 顶栏高度, 工作区顶 y)，找不到返回 None。
+    """返回可跟随的 Codex 窗口 (l, t, r, b, 顶栏高度, 工作区顶 y, hwnd)，找不到返回 None。
 
     优先级:
       1. Codex 桌面 App —— codex.exe 自己拥有的可见顶层窗口；
@@ -270,7 +274,7 @@ def find_codex_rect():
         wins.append((pid.value, info[1] if info else "", cls.value,
                      title.value.lower(),
                      (r.left, r.top, r.right, r.bottom,
-                      max(0, cpt.y - r.top), mi.rcWork.top)))
+                      max(0, cpt.y - r.top), mi.rcWork.top, hwnd)))
         return True
 
     user32.EnumWindows(cb, 0)
@@ -320,6 +324,72 @@ def find_codex_rect():
 
     # 4) 终端标题含 codex
     return win_of(lambda w: w[1] in _TERMINAL_EXES and "codex" in w[3])
+
+
+class _GUITHREADINFO(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.c_uint), ("flags", ctypes.c_uint),
+                ("hwndActive", ctypes.wintypes.HWND),
+                ("hwndFocus", ctypes.wintypes.HWND),
+                ("hwndCapture", ctypes.wintypes.HWND),
+                ("hwndMenuOwner", ctypes.wintypes.HWND),
+                ("hwndMoveSize", ctypes.wintypes.HWND),
+                ("hwndCaret", ctypes.wintypes.HWND),
+                ("rcCaret", ctypes.wintypes.RECT)]
+
+
+def drag_target_exe():
+    """正在被鼠标拖动的窗口所属进程名（小写、无 .exe）；不在拖动则 None。
+
+    用前台线程 GUITHREADINFO 的 GUI_INMOVESIZE 标志判定，标题栏拖动与
+    系统菜单移动都算；单次调用极廉价，适合高频轮询。
+    """
+    user32 = ctypes.windll.user32
+    gti = _GUITHREADINFO()
+    gti.cbSize = ctypes.sizeof(gti)
+    if not user32.GetGUIThreadInfo(0, ctypes.byref(gti)):
+        return None
+    if not (gti.flags & 0x2) or not gti.hwndMoveSize:  # GUI_INMOVESIZE
+        return None
+    pid = ctypes.wintypes.DWORD()
+    user32.GetWindowThreadProcessId(gti.hwndMoveSize, ctypes.byref(pid))
+    info = _process_map().get(pid.value)
+    return info[1] if info else None
+
+
+try:
+    _dwmapi = ctypes.windll.dwmapi
+except OSError:
+    _dwmapi = None
+
+
+def occluder_over(rect, below_hwnd, skip_hwnd):
+    """rect 区域上方是否存在可见的其他窗口（把 Codex 顶栏挡住）。
+
+    以 below_hwnd（要保护的 Codex 窗口）为锚，用 GetWindow(GW_HWNDPREV)
+    沿 z 序向上走，遇到与 rect 相交的可见窗口即视为遮挡。skip_hwnd 是
+    浮窗自己；最小化与 DWM cloaked 的不可见幽灵窗口不参与判定。锚定
+    遍历不依赖 EnumWindows 的全局顺序，Codex 之下的桌面层永远够不到。
+    """
+    user32 = ctypes.windll.user32
+    if not user32.IsWindow(below_hwnd):
+        return False
+    l, t, r, b = rect
+    hwnd = user32.GetWindow(below_hwnd, 3)  # GW_HWNDPREV：z 序中的上一个（更高）
+    while hwnd:
+        if hwnd != skip_hwnd and user32.IsWindowVisible(hwnd) \
+                and not user32.IsIconic(hwnd):
+            if _dwmapi is not None:
+                v = ctypes.c_int(0)
+                if _dwmapi.DwmGetWindowAttribute(
+                        hwnd, 14, ctypes.byref(v), 4) == 0 and v.value:
+                    hwnd = user32.GetWindow(hwnd, 3)
+                    continue  # DWMWA_CLOAKED：屏上不可见
+            rc = ctypes.wintypes.RECT()
+            user32.GetWindowRect(hwnd, ctypes.byref(rc))
+            if rc.left < r and rc.right > l and rc.top < b and rc.bottom > t:
+                return True
+        hwnd = user32.GetWindow(hwnd, 3)
+    return False
 
 
 def enable_dpi_awareness():
@@ -373,6 +443,7 @@ class App:
         self._rz = None
         self._follow_hidden = False
         self._follow_miss = 0
+        self._dragging = False
         self.font_title = tkfont.Font(root=root, family="Microsoft YaHei UI",
                                       size=self.base["title"], weight="bold")
         self.font_norm = tkfont.Font(root=root, family="Microsoft YaHei UI",
@@ -463,10 +534,12 @@ class App:
         sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
         w, h = root.winfo_reqwidth(), root.winfo_reqheight()
         root.geometry("+%d+%d" % (sw - w - 40, sh - h - 90))
+        self._self_hwnd = ctypes.windll.user32.GetAncestor(root.winfo_id(), 2)
 
         root.after(400, self._pump)
         root.after(30000, self._refresh_countdowns)
         root.after(FOLLOW_INTERVAL_MS, self._follow_tick)
+        root.after(DRAG_INTERVAL_MS, self._drag_tick)
         self.refresh_async()
         root.after(POLL_SECONDS * 1000, self._loop)
 
@@ -619,6 +692,7 @@ class App:
     def _on_follow_toggle(self):
         self._set_layout(compact=self.follow_var.get())
         if self.follow_var.get():
+            self._dragging = False
             self._follow_tick()
         elif self._follow_hidden:
             self._follow_hidden = False
@@ -656,8 +730,8 @@ class App:
 
     def _follow_tick(self):
         self.root.after(FOLLOW_INTERVAL_MS, self._follow_tick)
-        if not self.follow_var.get():
-            return
+        if not self.follow_var.get() or self._dragging:
+            return  # 拖动期间由 _drag_tick 全权接管
         rect = find_codex_rect()
         if not rect:
             self._follow_miss += 1
@@ -667,7 +741,11 @@ class App:
                 self.root.withdraw()  # Codex 无可见窗口：浮窗随之隐藏
             return
         self._follow_miss = 0
-        l, t, r, b, nc_top, work_top = rect
+        self._sync_follow(rect)
+
+    def _dock_rect(self, rect):
+        """浮窗停靠在 Codex 顶栏时的目标矩形 (x1, y1, x2, y2)。"""
+        l, t, r, b, nc_top, work_top, _hwnd = rect
         w = max(1, self.root.winfo_width())
         h = max(1, self.root.winfo_height())
         x = round((l + r) / 2 - w / 2)
@@ -675,11 +753,52 @@ class App:
         y = t + max(0, (nc_top - h) // 2)
         if y < work_top:
             y = work_top  # 最大化/贴顶：不越过屏幕工作区顶边
-        if abs(x - self.root.winfo_x()) > 1 or abs(y - self.root.winfo_y()) > 1:
+        return (x, y, x + w, y + h)
+
+    def _is_occluded(self, rect):
+        """Codex 顶栏停靠区是否被其他窗口盖住。"""
+        return occluder_over(self._dock_rect(rect), rect[6], self._self_hwnd)
+
+    def _sync_follow(self, rect):
+        """按 Codex 当前矩形同步浮窗：停靠区被遮挡则暂时消失。"""
+        if self._is_occluded(rect):
+            if not self._follow_hidden:
+                self._follow_hidden = True
+                self.root.withdraw()  # Codex 被盖住：浮窗跟着退场
+            return
+        self._place_follow(rect)
+
+    def _place_follow(self, rect):
+        """定位到 Codex 顶栏并显形；隐藏状态下走这里恢复。"""
+        x, y = self._dock_rect(rect)[:2]
+        if (self._follow_hidden or
+                abs(x - self.root.winfo_x()) > 1 or
+                abs(y - self.root.winfo_y()) > 1):
             self.root.geometry("+%d+%d" % (x, y))
         if self._follow_hidden:
             self._follow_hidden = False
-            self.root.deiconify()  # Codex 重新出现：先定位再显形并继续跟随
+            self.root.deiconify()  # 先定位再显形，避免闪现在旧位置
+
+    def _drag_tick(self):
+        """高频探针：拖动 Codex 时隐藏浮窗，松手立即贴到新位置顶端。"""
+        self.root.after(DRAG_INTERVAL_MS, self._drag_tick)
+        if not self.follow_var.get():
+            self._dragging = False
+            return
+        exe = drag_target_exe()
+        dragging = exe is not None and exe in _DRAG_HIDE_EXES
+        if dragging and not self._dragging:
+            self._dragging = True
+            self._follow_miss = 0
+            if not self._follow_hidden:
+                self._follow_hidden = True
+                self.root.withdraw()  # 拖动途中隐藏，消除 1s 节拍的跟随拖影
+        elif not dragging and self._dragging:
+            self._dragging = False
+            rect = find_codex_rect()
+            if rect:
+                self._sync_follow(rect)  # 松手：贴到新顶端；被遮挡则保持隐藏
+            # 找不到（如拖动中被关闭）：保持隐藏，交给 _follow_tick 处理
 
     def _press(self, e):
         if getattr(e.widget, "_is_resize", False):
