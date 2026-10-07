@@ -11,7 +11,8 @@
      所以必须借助系统自带的 curl.exe（Schannel）发起请求。
 
 用法: pythonw codex_quota_widget.pyw [--debug]
-交互: 左键拖动移动；双击折叠/展开；右键菜单（立即刷新/跟随/显示模式/折叠/退出）。
+交互: 左键拖动移动；双击折叠/展开；右键菜单（立即刷新/跟随/固定跟随/显示模式/折叠/退出）。
+托盘: 左键找回浮窗，右键菜单（找回/立即刷新/退出）。
 环境变量: CODEX_WIDGET_PROXY 覆盖代理（默认 http://127.0.0.1:7897，
          设为 direct 则直连）。
 """
@@ -37,7 +38,11 @@ FOLLOW_INTERVAL_MS = 1000
 DRAG_INTERVAL_MS = 120
 PROXY = os.environ.get("CODEX_WIDGET_PROXY", "http://127.0.0.1:7897")
 DEBUG = "--debug" in sys.argv
-LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "widget.log")
+if getattr(sys, "frozen", False):
+    BASE_DIR = os.path.dirname(sys.executable)  # 打包成 exe 后：exe 所在目录
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_PATH = os.path.join(BASE_DIR, "widget.log")
 
 BG, FG, DIM, TRACK = "#1e1e1e", "#e8eaed", "#9aa0a6", "#333333"
 GREEN, ORANGE, RED = "#4caf50", "#ffb74d", "#ef5350"
@@ -392,6 +397,137 @@ def occluder_over(rect, below_hwnd, skip_hwnd):
     return False
 
 
+# ---- 托盘图标：独立线程自建隐藏窗口，纯 ctypes 无第三方依赖 ----
+
+_WM_TRAY = 0x0400 + 7   # WM_APP+7：托盘回调消息
+_NIM_ADD, _NIM_DELETE = 0, 2
+_TIP = "Codex 额度浮窗"
+_TRAY = {'hwnd': None, 'nid': None}
+
+
+class _NOTIFYICONDATAW(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.c_uint),
+                ("hWnd", ctypes.wintypes.HWND),
+                ("uID", ctypes.c_uint),
+                ("uFlags", ctypes.c_uint),
+                ("uCallbackMessage", ctypes.c_uint),
+                ("hIcon", ctypes.wintypes.HICON),
+                ("szTip", ctypes.c_wchar * 128),
+                ("dwState", ctypes.c_uint),
+                ("dwStateMask", ctypes.c_uint),
+                ("szInfo", ctypes.c_wchar * 256),
+                ("uVersion", ctypes.c_uint),
+                ("szInfoTitle", ctypes.c_wchar * 64),
+                ("dwInfoFlags", ctypes.c_uint)]
+
+
+def _tray_thread(q):
+    """托盘线程：隐藏窗口收回调，左键找回浮窗，右键原生弹出菜单。"""
+    try:
+        _tray_run(q)
+    except Exception:
+        import traceback
+        log("tray thread crash: %s" % traceback.format_exc())
+
+
+def _tray_run(q):
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    WNDPROC = ctypes.WINFUNCTYPE(ctypes.c_longlong, ctypes.wintypes.HWND,
+                                 ctypes.wintypes.UINT, ctypes.wintypes.WPARAM,
+                                 ctypes.wintypes.LPARAM)
+
+    class WNDCLASSW(ctypes.Structure):
+        _fields_ = [("style", ctypes.c_uint), ("lpfnWndProc", WNDPROC),
+                    ("cbClsExtra", ctypes.c_int), ("cbWndExtra", ctypes.c_int),
+                    ("hInstance", ctypes.wintypes.HINSTANCE),
+                    ("hIcon", ctypes.wintypes.HICON), ("hCursor", ctypes.wintypes.HANDLE),
+                    ("hbrBackground", ctypes.wintypes.HBRUSH),
+                    ("lpszMenuName", ctypes.wintypes.LPCWSTR),
+                    ("lpszClassName", ctypes.wintypes.LPCWSTR)]
+
+    nid = _NOTIFYICONDATAW()
+    nid.cbSize = ctypes.sizeof(nid)
+    nid.uID = 1
+    nid.uFlags = 0x1 | 0x2 | 0x4   # NIF_MESSAGE | NIF_ICON | NIF_TIP
+    nid.uCallbackMessage = _WM_TRAY
+    user32.LoadIconW.restype = ctypes.wintypes.HICON
+    kernel32.GetModuleHandleW.restype = ctypes.wintypes.HMODULE
+    user32.LoadIconW.argtypes = [ctypes.wintypes.HINSTANCE,
+                                 ctypes.wintypes.LPVOID]
+    # 打包成 exe 后优先用其内置图标；源码运行退回通用应用图标
+    nid.hIcon = user32.LoadIconW(kernel32.GetModuleHandleW(None), 1) \
+        or user32.LoadIconW(None, 32512)   # IDI_APPLICATION
+    nid.szTip = _TIP
+    taskbar_created = user32.RegisterWindowMessageW("TaskbarCreated")
+    shell32 = ctypes.windll.shell32
+    user32.CreateWindowExW.argtypes = [
+        ctypes.wintypes.DWORD, ctypes.wintypes.LPCWSTR,
+        ctypes.wintypes.LPCWSTR, ctypes.wintypes.DWORD,
+        ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        ctypes.wintypes.HWND, ctypes.wintypes.HMENU,
+        ctypes.wintypes.HINSTANCE, ctypes.wintypes.LPVOID]
+    user32.CreateWindowExW.restype = ctypes.wintypes.HWND
+    user32.DefWindowProcW.argtypes = [ctypes.wintypes.HWND,
+                                      ctypes.wintypes.UINT,
+                                      ctypes.wintypes.WPARAM,
+                                      ctypes.wintypes.LPARAM]
+    user32.DefWindowProcW.restype = ctypes.c_longlong
+
+    menu = user32.CreatePopupMenu()
+    user32.AppendMenuW(menu, 0, 1, "找回浮窗")
+    user32.AppendMenuW(menu, 0, 2, "立即刷新")
+    user32.AppendMenuW(menu, 0x00000800, 0, None)   # MF_SEPARATOR
+    user32.AppendMenuW(menu, 0, 3, "退出")
+
+    def wndproc(hwnd, msg, wparam, lparam):
+        if msg == _WM_TRAY:
+            try:
+                if lparam == 0x0202:            # WM_LBUTTONUP：找回浮窗
+                    q.put(("tray", "show", None, None))
+                elif lparam == 0x0205:          # WM_RBUTTONUP：弹出菜单
+                    user32.SetForegroundWindow(hwnd)
+                    pt = ctypes.wintypes.POINT()
+                    user32.GetCursorPos(ctypes.byref(pt))
+                    cmd = user32.TrackPopupMenu(menu, 0x0100 | 0x2,
+                                                pt.x, pt.y, 0, hwnd, None)
+                    user32.PostMessageW(hwnd, 0, 0, 0)   # WM_NULL 消化前台标记
+                    q.put(("tray", {1: "show", 2: "refresh",
+                                    3: "quit"}.get(cmd), None, None))
+            except Exception:
+                pass
+            return 0
+        if msg == taskbar_created:               # explorer 重启后补挂图标
+            shell32.Shell_NotifyIconW(_NIM_ADD, ctypes.byref(nid))
+            return 0
+        if msg == 0x0010:                        # WM_CLOSE
+            user32.PostQuitMessage(0)
+            return 0
+        return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+    proc = WNDPROC(wndproc)
+    wc = WNDCLASSW()
+    wc.lpfnWndProc = proc
+    wc.hInstance = kernel32.GetModuleHandleW(None)
+    wc.lpszClassName = "CodexQuotaWidgetTray"
+    user32.RegisterClassW(ctypes.byref(wc))
+    hwnd = user32.CreateWindowExW(0, wc.lpszClassName, _TIP, 0,
+                                  0, 0, 0, 0, None, None, wc.hInstance, None)
+    nid.hWnd = hwnd
+    _TRAY['hwnd'] = hwnd
+    _TRAY['nid'] = nid
+    _TRAY['added'] = bool(shell32.Shell_NotifyIconW(_NIM_ADD, ctypes.byref(nid)))
+    if not _TRAY['added']:
+        log("tray add failed err=%s" % kernel32.GetLastError())
+    else:
+        log("tray icon added hwnd=%s" % nid.hWnd)
+
+    msg = ctypes.wintypes.MSG()
+    while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+        user32.TranslateMessage(ctypes.byref(msg))
+        user32.DispatchMessageW(ctypes.byref(msg))
+
+
 def enable_dpi_awareness():
     """按真实 DPI 原生渲染，避免 Windows 对整窗位图拉伸导致文字发虚。"""
     try:
@@ -438,6 +574,9 @@ class App:
                      "bar_w": 95, "bar_h": 8, "cbar_w": 20, "cbar_h": 7}
         self.scale = 1.0
         self.follow_var = tk.BooleanVar(value=False)
+        self.pin_var = tk.BooleanVar(value=False)  # 固定跟随：钉住窗口内相对比例
+        self.pin_frac = (0.0, 0.0)
+        self._last_rect = None
         self.remain_var = tk.BooleanVar(value=False)  # True=显示剩余额度
         self._c_err_shown = False
         self._rz = None
@@ -518,12 +657,15 @@ class App:
         menu.add_checkbutton(label="跟随 Codex 窗口",
                              variable=self.follow_var,
                              command=self._on_follow_toggle)
+        menu.add_checkbutton(label="固定跟随",
+                             variable=self.pin_var,
+                             command=self._on_pin_toggle)
         menu.add_checkbutton(label="显示剩余额度",
                              variable=self.remain_var,
                              command=self.apply)
         menu.add_command(label="折叠 / 展开", command=self.toggle_collapse)
         menu.add_separator()
-        menu.add_command(label="退出", command=root.destroy)
+        menu.add_command(label="退出", command=self._quit)
 
         root.bind_all("<ButtonPress-1>", self._press, add="+")
         root.bind_all("<B1-Motion>", self._move, add="+")
@@ -540,6 +682,8 @@ class App:
         root.after(30000, self._refresh_countdowns)
         root.after(FOLLOW_INTERVAL_MS, self._follow_tick)
         root.after(DRAG_INTERVAL_MS, self._drag_tick)
+        threading.Thread(target=_tray_thread, args=(self.q,),
+                         daemon=True).start()
         self.refresh_async()
         root.after(POLL_SECONDS * 1000, self._loop)
 
@@ -563,6 +707,9 @@ class App:
         try:
             while True:
                 kind, data, via, err = self.q.get_nowait()
+                if kind == "tray":
+                    self._on_tray(data)
+                    continue
                 if kind == "ok":
                     self.data, self.via, self.error = data, via, None
                     self.updated = time.strftime("%H:%M:%S")
@@ -690,6 +837,8 @@ class App:
     # ---- 跟随模式 ----
 
     def _on_follow_toggle(self):
+        if self.follow_var.get() and self.pin_var.get():
+            self.pin_var.set(False)  # 两种跟随互斥
         self._set_layout(compact=self.follow_var.get())
         if self.follow_var.get():
             self._dragging = False
@@ -698,6 +847,24 @@ class App:
             self._follow_hidden = False
             self._follow_miss = 0
             self.root.deiconify()  # 关闭跟随时若已隐藏，恢复显示
+
+    def _on_pin_toggle(self):
+        if self.pin_var.get():
+            if self.follow_var.get():
+                self.follow_var.set(False)
+                self._on_follow_toggle()  # 还原常规布局并处理隐藏态
+            rect = find_codex_rect()
+            # 钉住当前在 Codex 窗口内的相对比例；找不到 Codex 就退化为贴其左上角
+            self.pin_frac = (((self.root.winfo_x() - rect[0]) / max(1, rect[2] - rect[0]),
+                              (self.root.winfo_y() - rect[1]) / max(1, rect[3] - rect[1]))
+                             if rect else (0.0, 0.0))
+            self._dragging = False
+            self._follow_miss = 0
+            self._follow_tick()
+        elif self._follow_hidden:
+            self._follow_hidden = False
+            self._follow_miss = 0
+            self.root.deiconify()
 
     def _set_layout(self, compact):
         """在常规布局与跟随紧凑单行间切换，水平中心保持不动。"""
@@ -730,7 +897,7 @@ class App:
 
     def _follow_tick(self):
         self.root.after(FOLLOW_INTERVAL_MS, self._follow_tick)
-        if not self.follow_var.get() or self._dragging:
+        if not (self.follow_var.get() or self.pin_var.get()) or self._dragging:
             return  # 拖动期间由 _drag_tick 全权接管
         rect = find_codex_rect()
         if not rect:
@@ -741,6 +908,7 @@ class App:
                 self.root.withdraw()  # Codex 无可见窗口：浮窗随之隐藏
             return
         self._follow_miss = 0
+        self._last_rect = rect
         self._sync_follow(rect)
 
     def _dock_rect(self, rect):
@@ -756,21 +924,48 @@ class App:
         return (x, y, x + w, y + h)
 
     def _is_occluded(self, rect):
-        """Codex 顶栏停靠区是否被其他窗口盖住。"""
-        return occluder_over(self._dock_rect(rect), rect[6], self._self_hwnd)
+        """浮窗所在区域是否被其他窗口盖住（固定跟随看自身位置，否则看停靠区）。"""
+        if self.pin_var.get():
+            x, y = self.root.winfo_x(), self.root.winfo_y()
+            area = (x, y, x + max(1, self.root.winfo_width()),
+                    y + max(1, self.root.winfo_height()))
+        else:
+            area = self._dock_rect(rect)
+        return occluder_over(area, rect[6], self._self_hwnd)
+
+    def _clamp_pin(self, rect, x, y):
+        """固定跟随位置钳回 Codex 所在显示器的工作区，防止最大化等场景溢出屏幕。"""
+        user32 = ctypes.windll.user32
+        mi = _MONITORINFO()
+        mi.cbSize = ctypes.sizeof(mi)
+        hmon = user32.MonitorFromWindow(rect[6], 2)
+        if hmon and user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+            w = max(1, self.root.winfo_width())
+            h = max(1, self.root.winfo_height())
+            x = min(max(x, mi.rcWork.left), max(mi.rcWork.left, mi.rcWork.right - w))
+            y = min(max(y, mi.rcWork.top), max(mi.rcWork.top, mi.rcWork.bottom - h))
+        return x, y
 
     def _sync_follow(self, rect):
-        """按 Codex 当前矩形同步浮窗：停靠区被遮挡则暂时消失。"""
+        """按 Codex 当前矩形同步浮窗：被遮挡则暂时消失，否则定位显形。"""
         if self._is_occluded(rect):
             if not self._follow_hidden:
                 self._follow_hidden = True
                 self.root.withdraw()  # Codex 被盖住：浮窗跟着退场
             return
-        self._place_follow(rect)
+        pos = None
+        if self.pin_var.get():
+            fx, fy = self.pin_frac
+            x = rect[0] + int(round(fx * (rect[2] - rect[0])))
+            y = rect[1] + int(round(fy * (rect[3] - rect[1])))
+            pos = self._clamp_pin(rect, x, y)
+        self._place_follow(rect, pos)
 
-    def _place_follow(self, rect):
-        """定位到 Codex 顶栏并显形；隐藏状态下走这里恢复。"""
-        x, y = self._dock_rect(rect)[:2]
+    def _place_follow(self, rect, pos=None):
+        """定位并显形；隐藏状态下走这里恢复。pos 给定则钉在该处（固定跟随）。"""
+        if pos is None:
+            pos = self._dock_rect(rect)[:2]
+        x, y = pos
         if (self._follow_hidden or
                 abs(x - self.root.winfo_x()) > 1 or
                 abs(y - self.root.winfo_y()) > 1):
@@ -782,7 +977,7 @@ class App:
     def _drag_tick(self):
         """高频探针：拖动 Codex 时隐藏浮窗，松手立即贴到新位置顶端。"""
         self.root.after(DRAG_INTERVAL_MS, self._drag_tick)
-        if not self.follow_var.get():
+        if not (self.follow_var.get() or self.pin_var.get()):
             self._dragging = False
             return
         exe = drag_target_exe()
@@ -800,6 +995,29 @@ class App:
                 self._sync_follow(rect)  # 松手：贴到新顶端；被遮挡则保持隐藏
             # 找不到（如拖动中被关闭）：保持隐藏，交给 _follow_tick 处理
 
+    def _on_tray(self, action):
+        """托盘事件（经队列回到主线程执行）：找回/刷新/退出。"""
+        if action == "show":
+            self._dragging = False
+            self._follow_miss = 0
+            self._follow_hidden = False
+            self.root.deiconify()  # 隐藏或卡住时从托盘找回
+        elif action == "refresh":
+            self.refresh_async()
+        elif action == "quit":
+            self._quit()
+
+    def _quit(self):
+        self._tray_remove()
+        self.root.destroy()
+
+    def _tray_remove(self):
+        nid = _TRAY.get("nid")
+        if nid:
+            ctypes.windll.shell32.Shell_NotifyIconW(_NIM_DELETE,
+                                                    ctypes.byref(nid))
+            _TRAY["nid"] = None
+
     def _press(self, e):
         if getattr(e.widget, "_is_resize", False):
             return
@@ -809,8 +1027,13 @@ class App:
     def _move(self, e):
         if getattr(e.widget, "_is_resize", False):
             return
-        self.root.geometry("+%d+%d" % (e.x_root - self._dx,
-                                       e.y_root - self._dy))
+        nx, ny = e.x_root - self._dx, e.y_root - self._dy
+        self.root.geometry("+%d+%d" % (nx, ny))
+        if self.pin_var.get() and self._last_rect:
+            # 固定跟随时手动挪动 = 在新位置重新钉住（存窗口内相对比例）
+            l, t, r, b = self._last_rect[:4]
+            self.pin_frac = ((nx - l) / max(1, r - l),
+                             (ny - t) / max(1, b - t))
 
     def _double(self, e):
         if getattr(e.widget, "_is_resize", False):

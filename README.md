@@ -21,7 +21,8 @@ itself uses. Not affiliated with OpenAI.
   separate login, ever.
 - **Drag to move** anywhere; **drag edges/corner to resize** (font, bars and
   padding scale together, 0.75×–3×); **double-click** to collapse to one line;
-  **right-click** menu (refresh now / follow / remaining / collapse / quit).
+  **right-click** menu (refresh now / follow / pinned follow / remaining /
+  collapse / quit).
 - **Follow mode** — right-click → "跟随 Codex 窗口" (follow Codex window):
   the widget docks into the Codex window's title bar — DPI-aware, also fits
   maximized/snapped windows — and switches to a compact one-line layout.
@@ -29,9 +30,17 @@ itself uses. Not affiliated with OpenAI.
   itself; it pops back and re-docks the moment Codex reappears. It also
   steps aside while you drag the Codex window or when another window
   covers it, and returns as soon as you let go / uncover it.
+- **Pinned follow** — drag the full-layout widget onto Codex wherever you
+  like, then right-click → "固定跟随" (pinned follow): it keeps that spot
+  relative to the Codex window (fractional anchor — stays put across
+  maximize and restore) with the full layout, and shares follow mode's
+  hide/reappear behaviors. Dragging it again re-pins to the new spot.
 - **Used / remaining display** — right-click → "显示剩余额度" (show remaining)
   flips numbers and bars to the remaining quota; warning colors always track
   usage, so "8% remaining" still reads red.
+- **Tray icon** — left-click recovers the widget whenever it is hidden or
+  stuck; right-click offers recover / refresh now / quit, so the widget can
+  always be closed even when invisible.
 - **DPI-sharp text** — declares Per-Monitor DPI awareness, so it stays crisp
   on 125%/150% scaled displays instead of being bitmap-stretched.
 - Auto-refresh every 60 s; countdowns re-render every 30 s.
@@ -83,6 +92,19 @@ the failed attempt is instant (connection refused), so the fallback is cheap.
 | Proxy | `CODEX_WIDGET_PROXY` env var (default `http://127.0.0.1:7897`, `direct` = direct only) |
 | Refresh interval | edit `POLL_SECONDS` at the top of the script |
 | Debug log | run with `--debug` → writes `widget.log` next to the script |
+
+## Build (optional)
+
+A standalone, install-free exe can be produced with PyInstaller — icon and
+spec live in `packaging/`, output lands in `app/`:
+
+    python -m PyInstaller --onefile --noconsole --icon="<abs path>/packaging/app.ico" \
+        --name CodexQuotaWidget --distpath app --workpath build \
+        --specpath packaging codex_quota_widget.pyw
+
+Note: the icon path must be absolute (relative paths resolve against the
+spec directory). The exe is unsigned, so SmartScreen may ask on first run
+("More info" → "Run anyway").
 
 ## Troubleshooting
 

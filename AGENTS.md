@@ -14,7 +14,8 @@ Windows 桌面置顶小浮窗（tkinter，纯标准库，单文件
 （#1e1e1e，窗口 alpha 0.96）。
 `start_widget.bat` 启动；60 秒轮询；左键拖动、拖边缘等比缩放
 （0.75–3×）、双击折叠（保持水平中心）、右键菜单（立即刷新/跟随/
-显示剩余额度/折叠/退出）。
+固定跟随/显示剩余额度/折叠/退出）；托盘图标（左键找回浮窗，右键
+找回/立即刷新/退出）——隐藏或卡住时唯一的可靠出口。
 
 ## 仓库状态（2026-10-07 已用 git 实况核对）
 
@@ -25,12 +26,22 @@ Windows 桌面置顶小浮窗（tkinter，纯标准库，单文件
   `4464d4b` 跟随模式 + 显示模式 + 配色等（含 AGENTS.md 与双语 README，
   用户逐项验收后经其同意推送备份）。
 - **工作区未提交改动（已自验，等用户验收，不满意会要求回退）**：
-  - `M codex_quota_widget.pyw`：①拖动 Codex 时浮窗隐藏、松手立即贴到
-    新位置顶栏（`drag_target_exe()` 120ms 探针读前台线程 GUITHREADINFO
-    的 GUI_INMOVESIZE + hwndMoveSize 归属，命中 _DRAG_HIDE_EXES 才隐藏，
-    拖动期间暂停 1s 跟随节拍）；②Codex 被其他窗口遮挡时浮窗同样暂时
-    消失、遮挡移除恢复（`occluder_over()` 锚定 z 序向上遍历）。
+  - `M codex_quota_widget.pyw`：①固定跟随（比例钉住+工作区钳制，修
+    直接最大化漂移）；②托盘图标（_tray_thread 独立线程纯 ctypes：
+    左键找回、右键原生菜单、TaskbarCreated 重挂、退出清理）。**坑：
+    冻结 exe 下收句柄的 WinAPI 必须 64 位 argtypes，否则托盘线程
+    OverflowError 静默死亡（CreateWindowExW/LoadIconW/
+    DefWindowProcW/GetModuleHandleW 已设，勿删）；noconsole 下线程
+    异常无痕，排障要 try/except + log(traceback)。**
 - 用户审核通过之前不 commit/push（工作约定）。
+- 打包（2026-10-07 实验）：PyInstaller 单文件 exe——
+  `python -m PyInstaller --onefile --noconsole --icon=".../packaging/app.ico"
+  --name CodexQuotaWidget --distpath app --workpath build --specpath
+  packaging codex_quota_widget.pyw`（icon 必须绝对路径，否则相对 spec
+  目录解析）。产物 `app/CodexQuotaWidget.exe`（~11MB，已 gitignore）；
+  `packaging/`（app.ico + spec）入库可复现。代码侧冻结适配：BASE_DIR 走
+  `sys.frozen` 分支（否则 widget.log 写进临时解包目录），托盘优先用
+  exe 内置图标。未签名 exe 首跑会遇 SmartScreen（更多信息→仍要运行）。
 
 ## 功能：跟随模式（2026-10-07 实现，待用户终审）
 
@@ -47,7 +58,15 @@ codex/chatgpt/终端命中才隐藏，拖浮窗自身不触发），松手后立
 停靠区被其他可见窗口盖住时同样暂时消失（`occluder_over()` 以 Codex
 hwnd 为锚沿 z 序 `GetWindow(GW_HWNDPREV)` 向上走，跳过自身/最小化/
 DWM cloaked 幽灵窗口；不依赖 EnumWindows 全局顺序），遮挡移除后
-下一拍恢复；拖动松手时若仍被遮挡则保持隐藏。
+下一拍恢复；拖动松手时若仍被遮挡则保持隐藏。固定跟随（右键勾选，
+与普通跟随互斥）：初始形态下把浮窗拖到 Codex 上合适位置后开启，
+钉住当时相对 Codex 的偏移（找不到 Codex 则退化为贴其左上角），此后
+跟随 Codex 移动但保持该偏移与常规布局（不切紧凑单行，可折叠/缩放）；
+手动拖动浮窗 = 在新位置重新钉住（用 _last_rect 缓存的 Codex 矩形
+即时更新偏移）；消失/重现/拖动避让与普通跟随一致，遮挡判定以浮窗
+自身所在区域为准。钉住量是**窗口内相对比例**（fx, fy）而非像素偏移：
+窗口尺寸变化（最大化/还原）时按比例换算位置并钳回 Codex 所在显示器的
+工作区，纯移动时行为与像素偏移一致；直接最大化不再漂移。
 同时切换为紧凑单行（约 380×39）：`5h ▮67% 1时37分 │ 周 ▮10% 6天19时`，
 无标题无状态行，百分比变色；出错时单行内容临时换成橙色错误提示。
 跟随检测优先级（`find_codex_rect()`）：

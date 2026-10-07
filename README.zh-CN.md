@@ -17,14 +17,19 @@ Windows 桌面置顶小浮窗，实时显示 [OpenAI Codex](https://openai.com/i
   浮窗自动跟进，无需任何操作。
 - **左键拖动**移动；**拖边缘/右下角**等比缩放（字号、进度条、留白联动，
   0.75×–3×）；**双击**折叠成一行；**右键**菜单（立即刷新 / 跟随 /
-  剩余额度 / 折叠 / 退出）。
+  固定跟随 / 剩余额度 / 折叠 / 退出）。
 - **跟随模式**：勾选"跟随 Codex 窗口"后，浮窗嵌入 Codex 窗口顶栏
   （随 DPI 自适应，最大化/贴顶同样适用），并切换为紧凑单行；Codex 没有
   可见窗口（关闭或最小化）时浮窗自动隐藏，重新出现立即回位继续跟随。
   拖动 Codex 窗口或它被其他窗口遮挡时浮窗也会暂时让位，松手/移开后
   立即回位。
+- **固定跟随**：在初始形态下把浮窗拖到 Codex 上合适位置后右键勾选——
+  浮窗保持在 Codex 窗口内的相对位置（比例锚定，最大化/还原不漂移），
+  维持完整布局，并共享跟随模式的消失/重现行为；再次手动拖动即重新钉住。
 - **已用 / 剩余显示**：勾选"显示剩余额度"把数字与进度条切换为剩余额度；
   警告色始终按已用比例计算（剩 8% 依然是红色）。
+- **托盘图标**：左键随时找回隐藏或卡住的浮窗；右键菜单（找回/立即刷新/
+  退出），浮窗不可见时也能正常退出。
 - **DPI 原生渲染**：声明 Per-Monitor DPI 感知，125%/150% 缩放屏上文字不发虚。
 - 每 60 秒自动刷新；倒计时每 30 秒重绘。
 
@@ -71,6 +76,18 @@ Windows 桌面置顶小浮窗，实时显示 [OpenAI Codex](https://openai.com/i
 | 代理 | 环境变量 `CODEX_WIDGET_PROXY`（默认 `http://127.0.0.1:7897`，`direct` = 仅直连） |
 | 刷新间隔 | 改脚本顶部 `POLL_SECONDS` |
 | 调试日志 | 带 `--debug` 运行 → 在脚本旁写 `widget.log` |
+
+## 打包（可选）
+
+用 PyInstaller 可产出免安装的单文件 exe——图标与 spec 在 `packaging/`，
+产物输出到 `app/`：
+
+    python -m PyInstaller --onefile --noconsole --icon="<绝对路径>/packaging/app.ico" \
+        --name CodexQuotaWidget --distpath app --workpath build \
+        --specpath packaging codex_quota_widget.pyw
+
+注意：icon 必须是绝对路径（相对路径会相对 spec 目录解析）。exe 未签名，
+首次运行可能触发 SmartScreen（更多信息 → 仍要运行）。
 
 ## 常见问题
 

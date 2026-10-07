@@ -1,3 +1,5 @@
 widget.log
 __pycache__/
 *.pyc
+build/
+app/
