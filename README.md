@@ -21,7 +21,15 @@ itself uses. Not affiliated with OpenAI.
   separate login, ever.
 - **Drag to move** anywhere; **drag edges/corner to resize** (font, bars and
   padding scale together, 0.75×–3×); **double-click** to collapse to one line;
-  **right-click** menu (refresh now / collapse / quit).
+  **right-click** menu (refresh now / follow / remaining / collapse / quit).
+- **Follow mode** — right-click → "跟随 Codex 窗口" (follow Codex window):
+  the widget docks into the Codex window's title bar — DPI-aware, also fits
+  maximized/snapped windows — and switches to a compact one-line layout.
+  When no Codex window is visible (closed or minimized) the widget hides
+  itself; it pops back and re-docks the moment Codex reappears.
+- **Used / remaining display** — right-click → "显示剩余额度" (show remaining)
+  flips numbers and bars to the remaining quota; warning colors always track
+  usage, so "8% remaining" still reads red.
 - **DPI-sharp text** — declares Per-Monitor DPI awareness, so it stays crisp
   on 125%/150% scaled displays instead of being bitmap-stretched.
 - Auto-refresh every 60 s; countdowns re-render every 30 s.

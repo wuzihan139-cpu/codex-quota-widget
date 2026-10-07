@@ -1,0 +1,79 @@
+# Codex Quota Widget — 项目上下文
+
+本文件夹（`D:\agent\codex_quota_widget`）是独立的 ZCode 工作区，与
+`D:\Study\sequence` 研究项目无关。此文件供未来会话自动读取，是本项目的
+固化记忆。
+
+## 项目是什么
+
+Windows 桌面置顶小浮窗（tkinter，纯标准库，单文件
+`codex_quota_widget.pyw`），实时显示 OpenAI Codex（ChatGPT 计划）的
+5 小时/每周额度：百分比、进度条（警告色阈值绿<70%/橙<90%/红≥90%，
+恒按已用比例算）、重置倒计时；右键可切换已用/剩余额度两种显示模式
+（剩余模式数字与填充量 = 100−已用，警告色不变）。背景黑灰半透明
+（#1e1e1e，窗口 alpha 0.96）。
+`start_widget.bat` 启动；60 秒轮询；左键拖动、拖边缘等比缩放
+（0.75–3×）、双击折叠（保持水平中心）、右键菜单（立即刷新/跟随/
+显示剩余额度/折叠/退出）。
+
+## 仓库状态（2026-10-07 已用 git 实况核对）
+
+- GitHub：https://github.com/wuzihan139-cpu/codex-quota-widget（**private**，
+  MIT，英文 README.md + 中文 README.zh-CN.md）。
+- 分支 main 跟踪 origin/main，本地与远程同步在 `72e7cc9`，共 2 个提交：
+  `65459d6` 初始发布；`72e7cc9` 标题居中 + 折叠/展开中心保持。
+- **工作区未提交改动（均已自验，等用户审核后才 commit/push——用户明确
+  要求）**：
+  - `M codex_quota_widget.pyw`：跟随模式 + 紧凑单行布局 + 两个 bug 修复
+    （宿主窗口检测命中 chatgpt.exe、`pack_configure` 复活守卫）；
+  - `?? AGENTS.md`：本文件（届时建议一并提交，让项目记忆随仓库走）；
+  - `?? _follow_demo.png`：跟随模式演示截图（临时产物，审核后删除或
+    加入 .gitignore）。
+- 审核通过后的提交应包含：上述代码改动 + README 更新（跟随模式、紧凑
+  布局、跟随检测规则的说明）。
+
+## 功能：跟随模式（2026-10-07 实现，待用户终审）
+
+右键勾选"跟随 Codex 窗口"：每秒找 Codex 窗口，浮窗水平居中嵌入其
+顶栏（垂直居中于窗口非客户区顶部；chatgpt/codex 是 Chromium 系
+自绘标题栏，客户区=整窗即 nc_top=0，效果为覆盖其头部条且与窗口顶
+齐平；y 不越出所在屏幕工作区顶边）。连续约 2 秒（2 拍，防进程快照
+偶发失败闪隐）找不到 Codex 窗口则自动隐藏，重新出现立即定位并显形
+跟随；关闭跟随时若已隐藏则强制显形。最小化视同消失。
+同时切换为紧凑单行（约 380×39）：`5h ▮67% 1时37分 │ 周 ▮10% 6天19时`，
+无标题无状态行，百分比变色；出错时单行内容临时换成橙色错误提示。
+跟随检测优先级（`find_codex_rect()`）：
+1. Codex 桌面 App 自身窗口（codex.exe 拥有可见顶层窗口）；
+2. **CLI 宿主窗口**：沿 codex.exe 父进程链找最近的有可见窗口的祖先——
+   实测本机用户是在 **ChatGPT 桌面 App（chatgpt.exe）里跑 Codex**，
+   命中的就是它；
+3. 经典控制台 conhost（宿主在父链上）；
+4. 标题含 "codex" 的终端窗口。
+系统进程（explorer 等）在链追溯中跳过；最小化窗口不跟随。
+
+## 关键技术事实（踩过坑的，勿回退）
+
+- 接口 `GET https://chatgpt.com/backend-api/codex/usage`，Bearer 令牌来自
+  `~/.codex/auth.json`（每次轮询前重读，CLI 刷新令牌后自动跟进）。
+- **Python 自身 TLS 指纹被 chatgpt.com 的 Cloudflare 403**，必须用 curl
+  子进程（系统/Git 自带 Schannel 版均可）；**curl 加 `--ssl-no-revoke`
+  必被 403**（矩阵测试 6/6 验证），不要加。
+- 网络：默认走 Clash `http://127.0.0.1:7897`，失败瞬间回落直连；
+  环境变量 `CODEX_WIDGET_PROXY` 可覆盖（`direct`=仅直连）。
+- pythonw 这类无控制台 GUI 进程 spawn curl 会闪黑框，必须
+  `creationflags=CREATE_NO_WINDOW`。
+- 用户屏幕 DPI 会变（144/120 都出现过）：启动时
+  `SetProcessDpiAwareness(2)` + `tk scaling = dpi/72`，文字才不发虚。
+- **tkinter 陷阱：对已 `pack_forget` 的控件调用 `pack_configure` 会把它
+  重新显示**——`apply_scale` 里已用 `winfo_manager()=="pack"` 守卫，
+  改布局逻辑时保持这个守卫。
+- 混合 DPI 多显示器下 ImageGrab 截图坐标会偏移（截出来缺角是截图工具
+  的问题，不是窗口问题）；要视觉验证就在主屏渲染测试实例再截。
+- 本机窗口检测/进程枚举全部用 ctypes（Toolhelp32 快照 + EnumWindows），
+  无第三方依赖。
+
+## 工作约定
+
+- 改动后先自验（数值验证 + 主屏渲染截图）再交用户审核；**用户审核通过
+  之前不 commit/push**。
+- `--debug` 运行写 `widget.log`（已 gitignore）。
