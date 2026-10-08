@@ -44,6 +44,8 @@ Windows 桌面置顶小浮窗（tkinter，纯标准库）。入口仍是
   顶部为仓库链接；正文按像素排满，英文和数字整段换行；说明窗里的点击
   不拖动、不折叠浮窗。`app/CodexQuotaWidget.exe` 按当前源码重新打包
   （仍 gitignore，不入库）。
+- 用户已验收跟随目标两处（2026-10-08）：右键菜单不当跟随目标；标题里
+  出现 codex 的终端不再跟随。此次未重新打包 exe。
 - 用户审核通过之前不 commit/push（工作约定）；每轮改动遵循"先提交推送
   备份，再动工，不满意回退"的节奏。
 - 冻结 exe 坑（托盘排障实录）：收句柄的 WinAPI 必须 64 位 argtypes
@@ -103,9 +105,13 @@ codex.exe 父链跟走了 VSCode 窗口——编辑器不算 Codex 宿主，Chat
 2. **CLI 宿主窗口**：沿 codex.exe 父进程链找最近的有可见窗口的祖先——
    实测本机用户是在 **ChatGPT 桌面 App（chatgpt.exe）里跑 Codex**，
    命中的就是它；
-3. 经典控制台 conhost（宿主在父链上）；
-4. 标题含 "codex" 的终端窗口。
-系统进程（explorer 等）在链追溯中跳过；最小化窗口不跟随。
+3. 经典控制台 conhost（宿主在父链上）。
+标题里出现 codex 的终端不再跟随：Grok Build / Windows Terminal 的标签
+会带上任务名（例如 Codex quota widget），ChatGPT 最小化时浮窗会贴到
+这个聊天窗口。真正承载 codex 的终端仍由父链命中。
+系统进程（explorer 等）在链追溯中跳过；最小化窗口不跟随。右键菜单
+（有 owner 的无标题弹出层，或带 WS_EX_NOACTIVATE 的弹出层）不跟随，
+否则浮窗会跳到点击处。
 
 ## 关键技术事实（踩过坑的，勿回退）
 

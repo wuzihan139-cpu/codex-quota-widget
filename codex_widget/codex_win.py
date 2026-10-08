@@ -3,10 +3,12 @@
 检测优先级（find_codex_rect）：
   1. codex.exe 自己的可见顶层窗口；
   2. 沿 codex.exe 父进程链找最近的有可见窗口的祖先（本机是 chatgpt.exe）；
-  3. 父链上的经典控制台 conhost；
-  4. 标题含 codex 的终端窗口。
+  3. 父链上的经典控制台 conhost。
+标题里出现 codex 的终端不算：Grok / Windows Terminal 的标签会带上
+任务名（例如 Codex quota widget），ChatGPT 最小化后浮窗会贴到聊天窗口。
 编辑器/IDE（code、code-insiders、devenv）在宿主追溯里跳过：集成终端里的
-codex 会话不能把浮窗拽到编辑器上。最小化窗口不跟随。
+codex 会话不能把浮窗拽到编辑器上。最小化窗口不跟随。右键菜单是盖在
+页面上的弹出层，也不能当跟随目标，否则浮窗会贴到点击处。
 遮挡判定以目标 hwnd 为锚沿 z 序向上走，不依赖 EnumWindows 的全局顺序。
 """
 
@@ -70,6 +72,37 @@ def _process_map():
     return procs
 
 
+# 右键菜单。单独加载 user32，避免改掉遮挡判断共用的那份函数原型。
+_WS_POPUP = 0x80000000
+_WS_CAPTION = 0x00C00000
+_WS_EX_NOACTIVATE = 0x08000000
+_menu_user32 = ctypes.WinDLL("user32", use_last_error=True)
+_menu_user32.GetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int]
+_menu_user32.GetWindowLongW.restype = ctypes.c_ulong
+_menu_user32.GetWindow.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+_menu_user32.GetWindow.restype = ctypes.c_void_p
+
+
+def is_context_popup(style, exstyle, owner, cls):
+    """页面右键菜单。主窗口没有 owner，也不会带 WS_EX_NOACTIVATE。"""
+    if cls == "#32768":
+        return True
+    style &= 0xFFFFFFFF
+    exstyle &= 0xFFFFFFFF
+    if not (style & _WS_POPUP) or (style & _WS_CAPTION):
+        return False
+    if owner:
+        return True
+    return bool(exstyle & _WS_EX_NOACTIVATE)
+
+
+def _is_context_popup(hwnd, cls):
+    style = _menu_user32.GetWindowLongW(hwnd, -16)
+    exstyle = _menu_user32.GetWindowLongW(hwnd, -20)
+    owner = _menu_user32.GetWindow(hwnd, 4) or 0
+    return is_context_popup(style, exstyle, owner, cls)
+
+
 def find_codex_rect():
     """返回可跟随的 Codex 窗口 (l, t, r, b, 顶栏高度, 工作区顶 y, hwnd)，找不到返回 None。
 
@@ -99,6 +132,10 @@ def find_codex_rect():
         user32.GetMonitorInfoW(hmon, ctypes.byref(mi))
         cls = ctypes.create_unicode_buffer(64)
         user32.GetClassNameW(hwnd, cls, 64)
+        # 菜单比 100×80 大，又排在主窗口的 z 序上面。不跳过的话，
+        # 浮窗会按菜单顶边停到点击处，菜单关闭后才回到顶栏。
+        if _is_context_popup(hwnd, cls.value):
+            return True
         title = ctypes.create_unicode_buffer(256)
         user32.GetWindowTextW(hwnd, title, 256)
         info = procs.get(pid.value)
@@ -153,8 +190,10 @@ def find_codex_rect():
     if r:
         return r
 
-    # 4) 终端标题含 codex
-    return win_of(lambda w: w[1] in _TERMINAL_EXES and "codex" in w[3])
+    # 标题含 codex 的终端不再跟随。Windows Terminal 的当前标签会写成
+    # 任务句子（Grok Build 里就是这段聊天），里面常有 Codex 这几个字，
+    # 但该进程并不在 codex.exe 的父链上。真正的终端宿主由上面的父链命中。
+    return None
 
 
 class _GUITHREADINFO(ctypes.Structure):
