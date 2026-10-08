@@ -48,6 +48,9 @@ Windows 桌面置顶小浮窗（tkinter，纯标准库）。入口仍是
   出现 codex 的终端不再跟随。
 - 用户已验收右键「代理设置」，并要求更新使用说明后打包上传。说明里写了
   地址例子、留空、direct 和恢复默认。exe 按当时源码重新打包，仍不入库。
+- 安装包走 GitHub Releases，不进 git。仓库页右侧 Releases、以及
+  `releases/latest/download/CodexQuotaWidget.exe` 都是下载入口。做法对齐
+  TrafficMonitor 这类 Windows 开源软件。首个发布标签 `v1.0.0`。
 - 用户审核通过之前不 commit/push（工作约定）；每轮改动遵循"先提交推送
   备份，再动工，不满意回退"的节奏。
 - 冻结 exe 坑（托盘排障实录）：收句柄的 WinAPI 必须 64 位 argtypes

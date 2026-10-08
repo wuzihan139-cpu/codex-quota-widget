@@ -10,6 +10,14 @@ with progress bars and reset countdowns.
 Unofficial tool — it only reads the same usage endpoint that the Codex CLI
 itself uses. Not affiliated with OpenAI.
 
+## Download
+
+The Windows app is attached to [Releases](https://github.com/wuzihan139-cpu/codex-quota-widget/releases/latest), not stored in git. The Releases box on the right side of the repository page links to the same file.
+
+[Download CodexQuotaWidget.exe](https://github.com/wuzihan139-cpu/codex-quota-widget/releases/latest/download/CodexQuotaWidget.exe)
+
+You need a Codex CLI login on that PC. The exe is unsigned, so SmartScreen may block the first launch: choose More info, then Run anyway.
+
 ## Features
 
 - **5h & weekly quota** — used percentage, color-coded bar (green < 70%,

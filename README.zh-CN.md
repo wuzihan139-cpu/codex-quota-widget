@@ -8,6 +8,14 @@ Windows 桌面置顶小浮窗，实时显示 [OpenAI Codex](https://openai.com/i
 非官方工具——只读取 Codex CLI 自身使用的同一个用量接口。与 OpenAI 无关联。
 [English](README.md)
 
+## 下载
+
+安装包放在 [Releases](https://github.com/wuzihan139-cpu/codex-quota-widget/releases/latest)，不放进 git 仓库。仓库首页右侧的 Releases 也可以点进去下载。
+
+[下载 CodexQuotaWidget.exe](https://github.com/wuzihan139-cpu/codex-quota-widget/releases/latest/download/CodexQuotaWidget.exe)
+
+本机需要已经用 Codex CLI 登录过。程序没有签名，第一次打开时 Windows SmartScreen 可能拦截，选择「更多信息」再「仍要运行」。
+
 ## 特性
 
 - **5h / 周额度**：已用百分比 + 变色进度条（绿 <70% / 橙 <90% / 红 ≥90%）+
