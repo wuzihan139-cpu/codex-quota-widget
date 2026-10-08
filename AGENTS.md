@@ -26,7 +26,7 @@ Windows 桌面置顶小浮窗（tkinter，纯标准库）。入口仍是
 （#1e1e1e，窗口 alpha 0.96）。
 `start_widget.bat` 启动；60 秒轮询；左键拖动、拖边缘等比缩放
 （0.75–3×）、双击折叠（保持水平中心）、右键菜单（立即刷新/跟随/
-固定跟随/显示剩余额度/折叠/使用说明/退出）；「使用说明」打开说明窗，
+固定跟随/显示剩余额度/折叠/代理设置/使用说明/退出）；「使用说明」打开说明窗，
 最上方是仓库链接 https://github.com/wuzihan139-cpu/codex-quota-widget
 （仓库尚未公开）。托盘图标（左键找回浮窗，右键
 找回/立即刷新/退出）——隐藏或卡住时唯一的可靠出口。
@@ -45,7 +45,9 @@ Windows 桌面置顶小浮窗（tkinter，纯标准库）。入口仍是
   不拖动、不折叠浮窗。`app/CodexQuotaWidget.exe` 按当前源码重新打包
   （仍 gitignore，不入库）。
 - 用户已验收跟随目标两处（2026-10-08）：右键菜单不当跟随目标；标题里
-  出现 codex 的终端不再跟随。此次未重新打包 exe。
+  出现 codex 的终端不再跟随。
+- 用户已验收右键「代理设置」，并要求更新使用说明后打包上传。说明里写了
+  地址例子、留空、direct 和恢复默认。exe 按当时源码重新打包，仍不入库。
 - 用户审核通过之前不 commit/push（工作约定）；每轮改动遵循"先提交推送
   备份，再动工，不满意回退"的节奏。
 - 冻结 exe 坑（托盘排障实录）：收句柄的 WinAPI 必须 64 位 argtypes
@@ -120,8 +122,10 @@ codex.exe 父链跟走了 VSCode 窗口——编辑器不算 Codex 宿主，Chat
 - **Python 自身 TLS 指纹被 chatgpt.com 的 Cloudflare 403**，必须用 curl
   子进程（系统/Git 自带 Schannel 版均可）；**curl 加 `--ssl-no-revoke`
   必被 403**（矩阵测试 6/6 验证），不要加。
-- 网络：默认走 Clash `http://127.0.0.1:7897`，失败瞬间回落直连；
-  环境变量 `CODEX_WIDGET_PROXY` 可覆盖（`direct`=仅直连）。
+- 网络：默认走 Clash `http://127.0.0.1:7897`，失败瞬间回落直连。
+  右键「代理设置」写到本机 `~/.codex/widget_proxy.txt`（交给别人时不会
+  把你的地址打进 exe）。环境变量 `CODEX_WIDGET_PROXY` 仍可覆盖
+  （`direct`=仅直连）；本机文件优先。保存后下一拍刷新即生效。
 - pythonw 这类无控制台 GUI 进程 spawn curl 会闪黑框，必须
   `creationflags=CREATE_NO_WINDOW`。
 - 用户屏幕 DPI 会变（144/120 都出现过）：启动时

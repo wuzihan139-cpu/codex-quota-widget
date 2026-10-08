@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import time
 
-from codex_widget.config import AUTH_PATH, PROXY, USAGE_URL, log
+from codex_widget.config import AUTH_PATH, USAGE_URL, get_proxy, log
 
 # Git 自带的 curl（Schannel 较新，能过 chatgpt.com 的 Cloudflare）；
 # 系统自带的 curl.exe 版本旧，会被 403，仅作后备。
@@ -66,7 +66,8 @@ def run_curl(exe, proxy):
 
 def fetch_usage():
     """返回 (usage 字典, 通道标签)。依次尝试各 curl（代理 -> 直连）。"""
-    tries = [PROXY, None] if PROXY and PROXY != "direct" else [None]
+    proxy_now = get_proxy()
+    tries = [proxy_now, None] if proxy_now and proxy_now != "direct" else [None]
     errors = []
     for exe in curl_candidates():
         for proxy in tries:

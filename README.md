@@ -22,8 +22,8 @@ itself uses. Not affiliated with OpenAI.
 - **Drag to move** anywhere; **drag edges/corner to resize** (font, bars and
   padding scale together, 0.75×–3×); **double-click** to collapse to one line;
   **right-click** menu (refresh now / follow / pinned follow / remaining /
-  collapse / usage guide / quit). "使用说明" opens the guide, with the
-  project repository link at the top.
+  collapse / proxy / usage guide / quit). "使用说明" opens the guide, with
+  the project repository link at the top and a section on setting a proxy.
 - **Follow mode** — right-click → "跟随 Codex 窗口" (follow Codex window):
   the widget docks into the Codex window's title bar — DPI-aware, also fits
   maximized/snapped windows — and switches to a compact one-line layout.
@@ -88,16 +88,19 @@ Two gotcha's we hit, documented in case you fork this:
 - Do **not** add curl's `--ssl-no-revoke` flag — it alters the Schannel
   handshake in a way that also gets 403'd. Plain curl succeeds.
 
-Networking tries `http://127.0.0.1:7897` (Clash default) first and falls
-back to a direct connection — set the `CODEX_WIDGET_PROXY` environment
-variable to override (`direct` to force direct). If the proxy isn't running,
-the failed attempt is instant (connection refused), so the fallback is cheap.
+Networking tries a proxy first and falls back to a direct connection.
+The default proxy is `http://127.0.0.1:7897` (Clash). Right-click
+**代理设置** to save another address in `~/.codex/widget_proxy.txt`; the
+packaged exe reads that file too. `CODEX_WIDGET_PROXY` still works
+(`direct` forces a direct connection). A saved file wins over the
+environment variable. If the proxy isn't running, the failed attempt is
+instant (connection refused), so the fallback is cheap.
 
 ## Configuration
 
 | What | How |
 | --- | --- |
-| Proxy | `CODEX_WIDGET_PROXY` env var (default `http://127.0.0.1:7897`, `direct` = direct only) |
+| Proxy | Right-click **代理设置**, or `CODEX_WIDGET_PROXY` (default `http://127.0.0.1:7897`, `direct` = direct only). A saved file wins |
 | Refresh interval | edit `POLL_SECONDS` in `codex_widget/config.py` |
 | Debug log | run with `--debug` → writes `widget.log` next to the script |
 

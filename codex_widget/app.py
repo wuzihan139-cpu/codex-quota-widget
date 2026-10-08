@@ -15,8 +15,8 @@ import tkinter.font as tkfont
 import webbrowser
 
 from codex_widget.config import (
-    BG, DEBUG, DIM, FG, GREEN, ORANGE, POLL_SECONDS, PROXY, RED, REPO_URL,
-    TRACK, log)
+    BG, DEBUG, DIM, FG, GREEN, ORANGE, POLL_SECONDS, PROXY_DEFAULT, RED,
+    REPO_URL, TRACK, get_proxy, log, set_saved_proxy)
 from codex_widget.dpi import apply_dpi_scaling, enable_dpi_awareness
 from codex_widget.follow import FollowController
 from codex_widget.tray import remove_tray, start_tray
@@ -30,6 +30,8 @@ _USAGE_HELP = """\
 左键按住标题行拖动。拖右缘、底缘或右下角等比缩放（0.75 倍到 3 倍）。双击折叠成一行，再双击展开，水平中心不变。
 
 立即刷新会马上再查一次额度，平时每 60 秒自动查一次。
+
+代理设置：右键打开。把自己的代理地址填进去再点保存，例如 http://127.0.0.1:7890，也可以写 socks5://127.0.0.1:1080。地址记在这台电脑上，交给别人时不会带着走。留空再保存，就用默认的 http://127.0.0.1:7897，这个地址连不上会立刻改走直连。只想直连时填写 direct。恢复默认会清掉已保存的地址。保存后马上再查一次额度。
 
 跟随 Codex 窗口：浮窗贴在 Codex 顶栏，并收成一行。Codex 关闭或最小化后浮窗隐藏，窗口回来再继续跟随。拖动 Codex，或顶栏被别的窗口挡住时，浮窗先让开。
 
@@ -91,6 +93,139 @@ def _wrap_to_pixels(font, text, max_px):
             out.append(para[i:best].rstrip())
             i = best
     return "\n".join(out)
+
+
+def open_proxy_settings(master, on_saved=None):
+    """填写代理地址。已经打开时只把原窗口提到前面。"""
+    prev = getattr(master, "_proxy_settings", None)
+    if prev is not None:
+        try:
+            if prev.winfo_exists():
+                prev.deiconify()
+                prev.lift()
+                prev.focus_force()
+                return prev
+        except tk.TclError:
+            pass
+
+    win = tk.Toplevel(master)
+    master._proxy_settings = win
+    win.withdraw()
+    win.overrideredirect(True)
+    win.attributes("-topmost", True)
+    win.attributes("-alpha", 0)
+    win.configure(bg=BG)
+
+    title_font = tkfont.Font(root=win, family="Microsoft YaHei UI",
+                             size=11, weight="bold")
+    body_font = tkfont.Font(root=win, family="Microsoft YaHei UI", size=10)
+    small_font = tkfont.Font(root=win, family="Microsoft YaHei UI", size=9)
+
+    def _close():
+        if getattr(master, "_proxy_settings", None) is win:
+            master._proxy_settings = None
+        win.destroy()
+
+    shell = tk.Frame(win, bg=BG, highlightthickness=1,
+                     highlightbackground="#3a3a3a")
+    shell.pack(fill="both", expand=True)
+    bar = tk.Frame(shell, bg=BG, cursor="fleur")
+    bar.pack(fill="x", padx=14, pady=(10, 0))
+    heading = tk.Label(bar, text="代理设置", font=title_font, bg=BG, fg=FG,
+                       cursor="fleur")
+    heading.pack(side="left")
+    close = tk.Label(bar, text="关闭", font=small_font, bg=BG, fg=DIM,
+                     cursor="hand2")
+    close.pack(side="right")
+    close.bind("<Button-1>", lambda e: _close())
+
+    def _press_drag(e):
+        win._dx = e.x_root - win.winfo_x()
+        win._dy = e.y_root - win.winfo_y()
+
+    def _drag(e):
+        win.geometry("+%d+%d" % (e.x_root - win._dx, e.y_root - win._dy))
+
+    for widget in (bar, heading):
+        widget.bind("<ButtonPress-1>", _press_drag)
+        widget.bind("<B1-Motion>", _drag)
+
+    hint = tk.Label(
+        shell, justify="left", anchor="w", font=small_font, bg=BG, fg=DIM,
+        wraplength=400,
+        text=("留空并保存：用默认 %s，连不上就改走直连。\n"
+              "填写 direct：只走直连。\n"
+              "地址例子：http://127.0.0.1:7890") % PROXY_DEFAULT)
+    hint.pack(fill="x", padx=14, pady=(10, 6))
+
+    entry = tk.Entry(shell, font=body_font, bg="#2a2a2a", fg=FG,
+                     insertbackground=FG, relief="flat",
+                     highlightthickness=1, highlightbackground="#3a3a3a",
+                     highlightcolor="#8ab4f8")
+    entry.pack(fill="x", padx=14, ipady=4)
+    entry.insert(0, get_proxy())
+    entry.select_range(0, "end")
+    entry.icursor("end")
+
+    status = tk.Label(shell, text="", font=small_font, bg=BG, fg=GREEN,
+                      anchor="w")
+    status.pack(fill="x", padx=14, pady=(8, 0))
+
+    actions = tk.Frame(shell, bg=BG)
+    actions.pack(fill="x", padx=14, pady=(4, 12))
+
+    def _save(_event=None):
+        try:
+            current = set_saved_proxy(entry.get())
+        except OSError as exc:
+            status.configure(text="没保存成：" + str(exc), fg=ORANGE)
+            return "break"
+        entry.delete(0, "end")
+        entry.insert(0, current)
+        status.configure(text="已保存。正在按这个地址刷新。", fg=GREEN)
+        if on_saved is not None:
+            on_saved()
+        return "break"
+
+    def _reset(_event=None):
+        try:
+            current = set_saved_proxy("")
+        except OSError as exc:
+            status.configure(text="没恢复成：" + str(exc), fg=ORANGE)
+            return "break"
+        entry.delete(0, "end")
+        entry.insert(0, current)
+        status.configure(text="已恢复默认。正在刷新。", fg=GREEN)
+        if on_saved is not None:
+            on_saved()
+        return "break"
+
+    save = tk.Label(actions, text="保存", font=body_font, bg=BG, fg="#8ab4f8",
+                    cursor="hand2")
+    save.pack(side="left")
+    save.bind("<Button-1>", _save)
+    reset = tk.Label(actions, text="恢复默认", font=body_font, bg=BG, fg=DIM,
+                     cursor="hand2")
+    reset.pack(side="left", padx=(16, 0))
+    reset.bind("<Button-1>", _reset)
+
+    entry.bind("<Return>", _save)
+    win.bind("<Escape>", lambda e: _close())
+
+    win.update_idletasks()
+    width = max(win.winfo_reqwidth(), 420)
+    height = win.winfo_reqheight()
+    x = master.winfo_rootx() + 12
+    y = master.winfo_rooty() + master.winfo_height() + 8
+    sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+    x = min(max(8, x), max(8, sw - width - 8))
+    y = min(max(8, y), max(8, sh - height - 8))
+    win.geometry("%dx%d+%d+%d" % (width, height, x, y))
+    win.deiconify()
+    win.attributes("-alpha", 0.98)
+    win.lift()
+    entry.focus_set()
+    return win
 
 
 def open_usage_help(master):
@@ -354,6 +489,9 @@ class App:
                              command=self.apply)
         menu.add_command(label="折叠 / 展开", command=self.toggle_collapse)
         menu.add_separator()
+        menu.add_command(label="代理设置",
+                         command=lambda: open_proxy_settings(
+                             root, on_saved=self.refresh_async))
         menu.add_command(label="使用说明", command=lambda: open_usage_help(root))
         menu.add_command(label="退出", command=self._quit)
 
@@ -668,7 +806,7 @@ class App:
 
 
 def main():
-    log("start pid=%s debug=%s proxy=%r" % (os.getpid(), DEBUG, PROXY))
+    log("start pid=%s debug=%s proxy=%r" % (os.getpid(), DEBUG, get_proxy()))
     enable_dpi_awareness()
     root = tk.Tk()
     apply_dpi_scaling(root)
