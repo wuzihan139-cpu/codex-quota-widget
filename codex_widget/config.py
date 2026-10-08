@@ -17,6 +17,9 @@ DRAG_INTERVAL_MS = 120
 PROXY_DEFAULT = "http://127.0.0.1:7897"
 # 右键「代理设置」写在这里。跟 exe 放一起会在把程序交给别人时带上你的地址。
 PROXY_PATH = os.path.join(os.path.dirname(AUTH_PATH), "widget_proxy.txt")
+ALPHA_DEFAULT = 0.96
+ALPHA_MIN = 0.30
+ALPHA_PATH = os.path.join(os.path.dirname(AUTH_PATH), "widget_alpha.txt")
 DEBUG = "--debug" in sys.argv
 if getattr(sys, "frozen", False):
     BASE_DIR = os.path.dirname(sys.executable)  # 打包成 exe 后：exe 所在目录
@@ -65,6 +68,31 @@ def set_saved_proxy(value):
     os.makedirs(os.path.dirname(PROXY_PATH), exist_ok=True)
     with open(PROXY_PATH, "w", encoding="utf-8") as f:
         f.write(value)
+    return value
+
+
+def get_alpha():
+    """当前透明度，0.30 到 1。没有记录或内容无效时用默认 0.96。"""
+    try:
+        with open(ALPHA_PATH, encoding="utf-8") as f:
+            value = float(f.read().strip())
+    except (OSError, ValueError):
+        return ALPHA_DEFAULT
+    return min(1.0, max(ALPHA_MIN, value))
+
+
+def set_alpha(value):
+    """记下透明度。传入 None 时删掉文件，回到默认 0.96。"""
+    if value is None:
+        try:
+            os.remove(ALPHA_PATH)
+        except OSError:
+            pass
+        return ALPHA_DEFAULT
+    value = min(1.0, max(ALPHA_MIN, float(value)))
+    os.makedirs(os.path.dirname(ALPHA_PATH), exist_ok=True)
+    with open(ALPHA_PATH, "w", encoding="utf-8") as f:
+        f.write("%.2f" % value)
     return value
 
 

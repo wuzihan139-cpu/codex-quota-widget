@@ -23,10 +23,10 @@ Windows 桌面置顶小浮窗（tkinter，纯标准库）。入口仍是
 5 小时/每周额度：百分比、进度条（警告色阈值绿<70%/橙<90%/红≥90%，
 恒按已用比例算）、重置倒计时；右键可切换已用/剩余额度两种显示模式
 （剩余模式数字与填充量 = 100−已用，警告色不变）。背景黑灰半透明
-（#1e1e1e，窗口 alpha 0.96）。
+（#1e1e1e，窗口 alpha 默认 0.96，右键可调到 0.30–1）。
 `start_widget.bat` 启动；60 秒轮询；左键拖动、拖边缘等比缩放
 （0.75–3×）、双击折叠（保持水平中心）、右键菜单（立即刷新/跟随/
-固定跟随/显示剩余额度/折叠/代理设置/使用说明/退出）；「使用说明」打开说明窗，
+固定跟随/显示剩余额度/折叠/透明度/代理设置/使用说明/退出）；「使用说明」打开说明窗，
 最上方是仓库链接 https://github.com/wuzihan139-cpu/codex-quota-widget
 （仓库尚未公开）。托盘图标（左键找回浮窗，右键
 找回/立即刷新/退出）——隐藏或卡住时唯一的可靠出口。
@@ -51,6 +51,8 @@ Windows 桌面置顶小浮窗（tkinter，纯标准库）。入口仍是
 - 安装包走 GitHub Releases，不进 git。仓库页右侧 Releases、以及
   `releases/latest/download/CodexQuotaWidget.exe` 都是下载入口。做法对齐
   TrafficMonitor 这类 Windows 开源软件。首个发布标签 `v1.0.0`。
+- 用户已验收右键透明度滑条，并要求打包上传。新安装包在 Release `v1.1.0`，
+  exe 仍不入库。
 - 用户审核通过之前不 commit/push（工作约定）；每轮改动遵循"先提交推送
   备份，再动工，不满意回退"的节奏。
 - 冻结 exe 坑（托盘排障实录）：收句柄的 WinAPI 必须 64 位 argtypes
@@ -129,6 +131,8 @@ codex.exe 父链跟走了 VSCode 窗口——编辑器不算 Codex 宿主，Chat
   右键「代理设置」写到本机 `~/.codex/widget_proxy.txt`（交给别人时不会
   把你的地址打进 exe）。环境变量 `CODEX_WIDGET_PROXY` 仍可覆盖
   （`direct`=仅直连）；本机文件优先。保存后下一拍刷新即生效。
+- 透明度：右键滑条，范围 0.30–1，默认 0.96。松手写入
+  `~/.codex/widget_alpha.txt`。只影响主浮窗；说明窗和代理窗仍是 0.98。
 - pythonw 这类无控制台 GUI 进程 spawn curl 会闪黑框，必须
   `creationflags=CREATE_NO_WINDOW`。
 - 用户屏幕 DPI 会变（144/120 都出现过）：启动时

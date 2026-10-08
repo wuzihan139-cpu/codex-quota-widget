@@ -15,8 +15,9 @@ import tkinter.font as tkfont
 import webbrowser
 
 from codex_widget.config import (
-    BG, DEBUG, DIM, FG, GREEN, ORANGE, POLL_SECONDS, PROXY_DEFAULT, RED,
-    REPO_URL, TRACK, get_proxy, log, set_saved_proxy)
+    ALPHA_DEFAULT, ALPHA_MIN, BG, DEBUG, DIM, FG, GREEN, ORANGE,
+    POLL_SECONDS, PROXY_DEFAULT, RED, REPO_URL, TRACK, get_alpha, get_proxy,
+    log, set_alpha, set_saved_proxy)
 from codex_widget.dpi import apply_dpi_scaling, enable_dpi_awareness
 from codex_widget.follow import FollowController
 from codex_widget.tray import remove_tray, start_tray
@@ -32,6 +33,8 @@ _USAGE_HELP = """\
 立即刷新会马上再查一次额度，平时每 60 秒自动查一次。
 
 代理设置：右键打开。把自己的代理地址填进去再点保存，例如 http://127.0.0.1:7890，也可以写 socks5://127.0.0.1:1080。地址记在这台电脑上，交给别人时不会带着走。留空再保存，就用默认的 http://127.0.0.1:7897，这个地址连不上会立刻改走直连。只想直连时填写 direct。恢复默认会清掉已保存的地址。保存后马上再查一次额度。
+
+透明度：右键打开滑条。数字越小越透明，最低 30，最高 100。默认 96。文字和背景一起变淡。松手后记在这台电脑上，下次打开还是这个透明度。
 
 跟随 Codex 窗口：浮窗贴在 Codex 顶栏，并收成一行。Codex 关闭或最小化后浮窗隐藏，窗口回来再继续跟随。拖动 Codex，或顶栏被别的窗口挡住时，浮窗先让开。
 
@@ -93,6 +96,122 @@ def _wrap_to_pixels(font, text, max_px):
             out.append(para[i:best].rstrip())
             i = best
     return "\n".join(out)
+
+
+def open_alpha_settings(master):
+    """调节浮窗透明度。拖动时立刻生效，松手后记到本机。"""
+    prev = getattr(master, "_alpha_settings", None)
+    if prev is not None:
+        try:
+            if prev.winfo_exists():
+                prev.deiconify()
+                prev.lift()
+                prev.focus_force()
+                return prev
+        except tk.TclError:
+            pass
+
+    win = tk.Toplevel(master)
+    master._alpha_settings = win
+    win.withdraw()
+    win.overrideredirect(True)
+    win.attributes("-topmost", True)
+    win.attributes("-alpha", 0)
+    win.configure(bg=BG)
+
+    title_font = tkfont.Font(root=win, family="Microsoft YaHei UI",
+                             size=11, weight="bold")
+    body_font = tkfont.Font(root=win, family="Microsoft YaHei UI", size=10)
+    small_font = tkfont.Font(root=win, family="Microsoft YaHei UI", size=9)
+    current = get_alpha()
+
+    def _close():
+        try:
+            set_alpha(win._alpha)
+        except (OSError, tk.TclError):
+            pass
+        if getattr(master, "_alpha_settings", None) is win:
+            master._alpha_settings = None
+        win.destroy()
+
+    def _apply(percent):
+        alpha = min(1.0, max(ALPHA_MIN, float(percent) / 100.0))
+        win._alpha = alpha
+        try:
+            master.attributes("-alpha", alpha)
+        except tk.TclError:
+            pass
+
+    shell = tk.Frame(win, bg=BG, highlightthickness=1,
+                     highlightbackground="#3a3a3a")
+    shell.pack(fill="both", expand=True)
+    bar = tk.Frame(shell, bg=BG, cursor="fleur")
+    bar.pack(fill="x", padx=14, pady=(10, 0))
+    heading = tk.Label(bar, text="透明度", font=title_font, bg=BG, fg=FG,
+                       cursor="fleur")
+    heading.pack(side="left")
+    close = tk.Label(bar, text="关闭", font=small_font, bg=BG, fg=DIM,
+                     cursor="hand2")
+    close.pack(side="right")
+    close.bind("<Button-1>", lambda e: _close())
+
+    def _press_drag(e):
+        win._dx = e.x_root - win.winfo_x()
+        win._dy = e.y_root - win.winfo_y()
+
+    def _drag(e):
+        win.geometry("+%d+%d" % (e.x_root - win._dx, e.y_root - win._dy))
+
+    for widget in (bar, heading):
+        widget.bind("<ButtonPress-1>", _press_drag)
+        widget.bind("<B1-Motion>", _drag)
+
+    hint = tk.Label(shell, text="数字越小越透明。文字和背景一起变淡。",
+                    font=small_font, bg=BG, fg=DIM, anchor="w")
+    hint.pack(fill="x", padx=14, pady=(10, 4))
+
+    scale = tk.Scale(shell, from_=int(ALPHA_MIN * 100), to=100,
+                     orient="horizontal", resolution=1, showvalue=True,
+                     font=small_font, bg=BG, fg=FG, troughcolor="#5c5c5c",
+                     activebackground=FG, highlightthickness=0,
+                     sliderrelief="flat", borderwidth=0, length=280,
+                     command=_apply)
+    scale.set(int(round(current * 100)))
+    scale.pack(fill="x", padx=14)
+    scale.bind("<ButtonRelease-1>", lambda e: set_alpha(win._alpha))
+
+    actions = tk.Frame(shell, bg=BG)
+    actions.pack(fill="x", padx=14, pady=(4, 12))
+
+    def _reset(_event=None):
+        try:
+            alpha = set_alpha(None)
+        except OSError:
+            return "break"
+        scale.set(int(round(alpha * 100)))
+        _apply(alpha * 100)
+        return "break"
+
+    reset = tk.Label(actions, text="恢复默认", font=body_font, bg=BG, fg=DIM,
+                     cursor="hand2")
+    reset.pack(side="left")
+    reset.bind("<Button-1>", _reset)
+
+    win._alpha = current
+    win.bind("<Escape>", lambda e: _close())
+    win.update_idletasks()
+    width = max(win.winfo_reqwidth(), 320)
+    height = win.winfo_reqheight()
+    x = master.winfo_rootx() + 12
+    y = master.winfo_rooty() + master.winfo_height() + 8
+    sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+    x = min(max(8, x), max(8, sw - width - 8))
+    y = min(max(8, y), max(8, sh - height - 8))
+    win.geometry("%dx%d+%d+%d" % (width, height, x, y))
+    win.deiconify()
+    win.attributes("-alpha", 0.98)
+    win.lift()
+    return win
 
 
 def open_proxy_settings(master, on_saved=None):
@@ -394,7 +513,7 @@ class App:
 
         root.overrideredirect(True)
         root.attributes("-topmost", True)
-        root.attributes("-alpha", 0.96)
+        root.attributes("-alpha", get_alpha())
         root.configure(bg=BG)
 
         self.base = {"title": 11, "norm": 10, "small": 9,
@@ -489,6 +608,8 @@ class App:
                              command=self.apply)
         menu.add_command(label="折叠 / 展开", command=self.toggle_collapse)
         menu.add_separator()
+        menu.add_command(label="透明度",
+                         command=lambda: open_alpha_settings(root))
         menu.add_command(label="代理设置",
                          command=lambda: open_proxy_settings(
                              root, on_saved=self.refresh_async))
